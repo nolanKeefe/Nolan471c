@@ -1,0 +1,22 @@
+variables:
+  UV_VERSION: 0.9
+  PYTHON_VERSION: 3.14
+  BASE_LAYER: bookworm-slim
+  UV_CACHE_DIR: .uv-cache
+  UV_SYSTEM_PYTHON: 1
+
+stages:
+  - pre-commit
+
+pre-commit-check:
+  stage: pre-commit
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - $UV_CACHE_DIR
+  script:
+    - uv sync --all-extras
+    - uv run pre-commit run --all-files

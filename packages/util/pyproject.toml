@@ -1,0 +1,15 @@
+[project]
+name = "util"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "James Clause", email = "clause@udel.edu" }]
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = ["ruff>=0.14.1"]
+
+[tool.pyright]
+"include" = ["src"]
+"typeCheckingMode" = "strict"
