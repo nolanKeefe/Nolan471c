@@ -9,31 +9,31 @@ stages:
   - pre-commit
   - test
 
-pre-commit-check:
-  stage: pre-commit
+.default-uv-job:
   image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  before_script:
+    - apt-get update && apt-get install -y git
+    - uv sync --all-extras --all-packages
   cache:
     key:
       files:
         - uv.lock
     paths:
       - $UV_CACHE_DIR
+      - ~/.cache/pre-commit
+
+pre-commit-check:
+  stage: pre-commit
+  extends: .default-uv-job
   script:
-    - uv sync --all-extras
     - uv run pre-commit run --all-files
 
 pytest:
   stage: test
-  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
-  cache:
-    key:
-      files:
-        - uv.lock
-    paths:
-      - $UV_CACHE_DIR
+  extends: .default-uv-job
   script:
-    - uv sync --all-extras
     - uv run pytest
+  coverage: /TOTAL.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/
   artifacts:
     reports:
       junit: reports/test.xml
