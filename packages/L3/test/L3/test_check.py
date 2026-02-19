@@ -296,3 +296,9 @@ def test_check_primitive_right_invalid():  # makes a primitive with operator + a
 def test_check_store_valid():  # makes a store with base x and index 0 and value Imm and context has x so should pass because the base is a valid term and is defined in the context and the index is a valid index and the value is a valid term
     term = Store(base=x, index=0, value=Imm)
     check_term(term, context("x"))
+
+
+def test_check_store_invalid():  # makes a store with base y and index 0 and value Imm and context has x so should fail because the base is not defined in the context and is not a valid term
+    term = Store(base=x, index=0, value=Imm)
+    with pytest.raises(ValueError):
+        check_term(term, context())
