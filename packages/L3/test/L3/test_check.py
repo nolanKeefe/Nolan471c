@@ -232,6 +232,28 @@ def test_check_let_valid_multiple_bindings():  # makes a let with bindings x and
 # letrec
 
 
-def test_check_letrec_valid():  # makes a letrec with bindings x and x and body x so should pass because the bindings are valid and the body is a valid term and the binding is defined in the context of the body
-    term = LetRec(bindings=[("x", Imm)], body=x)
+def test_check_letrec_valid():
+    # makes a letrec with a binding x that is an abstract with no parameters and a self reference to x in the body
+    # and the body is a reference to x so should pass because the binding is valid and the body is a valid term and the binding is defined in the context of the body
+    term = LetRec(bindings=[("x", Abstract(parameters=[], body=x))], body=x)
     check_term(term, context())
+
+
+def test_check_letrec_duplicate_binders():  # makes a letrec with duplicate bindings x and x and body x so should fail because of the duplicate binders
+    term = LetRec(
+        bindings=[("x", Imm), ("x", Imm)], body=x
+    )  # dont need to test the recursive propery of letrec here because the duplicate binders will cause it to fail
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_letrec_unknown_binding():  # makes a letrec with binding x and self reference to y so should fail because y is not defined in the context of the body and is not a valid term
+    term = LetRec(bindings=[("x", Reference(name="y"))], body=Imm)
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_letrec_unknown_body():  # makes a letrec with binding x and body y so should fail because y is not defined in the context of the body and is not a valid term
+    term = LetRec(bindings=[("x", Imm)], body=Reference(name="y"))
+    with pytest.raises(ValueError):
+        check_term(term, context())
