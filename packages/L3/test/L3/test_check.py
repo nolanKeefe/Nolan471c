@@ -5,7 +5,10 @@ from L3.syntax import (
     Allocate,
     Apply,
     Begin,
+    Branch,
     Immediate,
+    Let,
+    LetRec,
     Program,
     Reference,
 )
@@ -168,3 +171,67 @@ def test_check_begin_floating_value():  # makes a begin with no effects and x as
     term = Begin(effects=[], value=x)
     with pytest.raises(ValueError):
         check_term(term, context())
+
+
+# branch
+def test_check_branch_valid():  # makes a branch with operator < and left x and right x and consequent Imm and otherwise Imm so should pass because the operator is valid and the left and right are valid terms and the consequent and otherwise are valid terms
+    term = Branch(operator="<", left=Imm, right=Imm, consequent=Imm, otherwise=Imm)
+    check_term(term, context())
+
+
+def test_check_branch_invalid_left():  # makes a branch with operator < and left x and right Imm and consequent Imm and otherwise Imm so should fail because the left is not a valid term
+    term = Branch(operator="<", left=x, right=Imm, consequent=Imm, otherwise=Imm)
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_branch_invalid_right():  # makes a branch with operator < and left Imm and right x and consequent Imm and otherwise Imm so should fail because the right is not a valid term
+    term = Branch(operator="<", left=Imm, right=x, consequent=Imm, otherwise=Imm)
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_branch_invalid_consequent():  # makes a branch with operator < and left Imm and right Imm and consequent x and otherwise Imm so should fail because the consequent is not a valid term
+    term = Branch(operator="<", left=Imm, right=Imm, consequent=x, otherwise=Imm)
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_branch_invalid_otherwise():  # makes a branch with operator < and left Imm and right Imm and consequent Imm and otherwise x so should fail because the otherwise is not a valid term
+    term = Branch(operator="<", left=Imm, right=Imm, consequent=Imm, otherwise=x)
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+# if multiple things are invalid then the tests should still catch it
+
+
+# Let
+def test_check_let_valid():  # makes a let with bindings x and x and body x so should pass because the bindings are valid and the body is a valid term and the binding is defined in the context of the body
+    term = Let(bindings=[("x", Imm)], body=x)
+    check_term(term, context())
+
+
+def test_check_let_duplicate_binders():  # makes a let with duplicate bindings x and x and body x so should fail because of the duplicate binders
+    term = Let(bindings=[("x", Imm), ("x", Imm)], body=x)
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_let_unknown_binding():  # makes a let with binding x and body y so should fail because y is not defined in the context of the body and is not a valid term
+    term = Let(bindings=[("x", Imm)], body=Reference(name="y"))
+    with pytest.raises(ValueError):
+        check_term(term, context())
+
+
+def test_check_let_valid_multiple_bindings():  # makes a let with bindings x and y and body x so should pass because the bindings are valid and the body is a valid term and the binding x is defined in the context of the body even though y is not used but is still a valid binding
+    term = Let(bindings=[("x", Imm), ("y", Imm)], body=x)
+    check_term(term, context())
+
+
+# letrec
+
+
+def test_check_letrec_valid():  # makes a letrec with bindings x and x and body x so should pass because the bindings are valid and the body is a valid term and the binding is defined in the context of the body
+    term = LetRec(bindings=[("x", Imm)], body=x)
+    check_term(term, context())
