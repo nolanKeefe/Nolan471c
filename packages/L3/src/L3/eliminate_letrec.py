@@ -30,7 +30,13 @@ def eliminate_letrec_term(
             )
 
         case L3.LetRec(bindings=bindings, body=body):
-            pass
+            # need to convert the letrec into a let
+            # the bindings can be rebound to the same name in the body
+            # the load should be obtained by reference I think
+            return L2.Let(
+                bindings=[(name, recur(value)) for name, value in bindings],
+                body=recur(body, context={**context, **dict.fromkeys([name for name, _ in bindings])}),
+            )
 
         case L3.Reference(name=name):
             # if name is a recursive variable -> (Load (Reference name)))
@@ -42,11 +48,17 @@ def eliminate_letrec_term(
             else:  # otherwise we can just return the reference in L2
                 return L2.Reference(name=name)
 
-        case L3.Abstract(parameters=_parameters, body=body):
-            pass
+        case L3.Abstract(parameters=_parameters, body=body):  # unchanged
+            return L2.Abstract(
+                parameters=_parameters,
+                body=recur(body),
+            )
 
-        case L3.Apply(target=_target, arguments=_arguments):
-            pass
+        case L3.Apply(target=_target, arguments=_arguments):  # unchanged
+            return L2.Apply(
+                target=recur(_target),
+                arguments=[recur(arg) for arg in _arguments],
+            )
 
         case L3.Immediate(value=value):  # pragma: no branch
             return L2.Immediate(value=value)
@@ -58,7 +70,9 @@ def eliminate_letrec_term(
                 right=recur(right),
             )
 
-        case L3.Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
+        case L3.Branch(
+            operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise
+        ):  # unchanged
             return L2.Branch(
                 operator=operator,
                 left=recur(left),
@@ -67,23 +81,23 @@ def eliminate_letrec_term(
                 otherwise=recur(otherwise),
             )
 
-        case L3.Allocate(count=count):  # pragma: no branch
+        case L3.Allocate(count=count):  # unchanged
             return L2.Allocate(count=count)
 
-        case L3.Load(base=base, index=index):  # pragma: no branch
+        case L3.Load(base=base, index=index):  # unchanged
             return L2.Load(
                 base=recur(base),
                 index=index,
             )
 
-        case L3.Store(base=base, index=index, value=value):  # pragma: no branch
+        case L3.Store(base=base, index=index, value=value):  # unchanged
             return L2.Store(
                 base=recur(base),
                 index=index,
                 value=recur(value),
             )
 
-        case L3.Begin(effects=_effects, value=value):  # pragma: no branch
+        case L3.Begin(effects=_effects, value=value):  # unchanged
             return L2.Begin(effects=[], value=recur(value))
 
 
@@ -91,5 +105,5 @@ def eliminate_letrec_program(
     program: L3.Program,
 ) -> L2.Program:
     match program:
-        case L3.Program(parameters=parameters, body=body):  # pragma: no branch
+        case L3.Program(parameters=parameters, body=body):  # unchanged
             return L2.Program(parameters=parameters, body=eliminate_letrec_term(body, {}))
