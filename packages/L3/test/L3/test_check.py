@@ -20,15 +20,12 @@ from L3.syntax import (
 x = Reference(name="x")
 Imm = Immediate(value=0)
 
-
-def context(*names: str) -> Context:  # a generic context helper that takes in a name for it and sets it to None
-    return dict.fromkeys(names, None)
-
-
-# program tests
-def test_check_program_no_param():
-    program = Program(  # it has nothing in the body and no parameters so should pass
-        parameters=[], body=Imm
+def test_check_term():
+    term = Let(
+        bindings=[
+            ("x", Immediate(value=0)),
+        ],
+        body=Reference(name="x"),
     )
     check_program(program)
 
@@ -40,9 +37,13 @@ def test_check_program_single_param():
     check_program(program)
 
 
-def test_check_program_multiple_param():
-    program = Program(  # makes a program with parameters x and y and body x so should pass because y is not used but is still a valid parameter
-        parameters=["x", "y"], body=x
+def test_check_term_let_scope():
+    term = Let(
+        bindings=[
+            ("x", Immediate(value=0)),
+            ("y", Reference(name="x")),
+        ],
+        body=Reference(name="y"),
     )
     check_program(program)
 
@@ -55,9 +56,13 @@ def test_check_program_duplicate_param():
         check_program(program)
 
 
-def test_check_program_unknown_param():
-    program = Program(  # makes a program with parameter y and body x so should fail because x is not a parameter and is not defined anywhere else in the program
-        parameters=["y"], body=x
+def test_check_term_let_duplicate_binders():
+    term = Let(
+        bindings=[
+            ("x", Immediate(value=0)),
+            ("x", Immediate(value=1)),
+        ],
+        body=Reference(name="x"),
     )
     with pytest.raises(ValueError):
         check_program(program)
@@ -74,17 +79,27 @@ def test_check_reference_empty():  # makes a reference to x and the context does
         check_term(x, context())
 
 
-def test_check_reference_unrelated():  # makes a reference to x and the context has y so should fail because x is not defined in the context even though there is a different variable y defined
-    with pytest.raises(ValueError):
-        check_term(x, context("y"))
+def test_check_term_letrec():
+    term = LetRec(
+        bindings=[
+            ("x", Immediate(value=0)),
+        ],
+        body=Reference(name="x"),
+    )
 
 
 def test_check_reference_multiple():  # makes a reference to x and the context has x and y so should pass because x is defined in the context even though there is a different variable y defined
     check_term(x, context("x", "y"))
 
 
-def test_check_reference_duplicate():  # makes a reference to x and the context has x and x so should pass because even though there are duplicate variables in the context it does not affect the reference to x
-    check_term(x, context("x", "x"))
+def test_check_term_letrec_scope():
+    term = LetRec(
+        bindings=[
+            ("y", Reference(name="x")),
+            ("x", Immediate(value=0)),
+        ],
+        body=Reference(name="x"),
+    )
 
 
 # abstract
@@ -93,10 +108,14 @@ def test_check_abstract_empty():  # makes an abstract with no parameters and bod
     check_term(abstract, context())
 
 
-def test_check_abstract_single_param():  # makes an abstract with parameter x and body x so should pass because x is a valid parameter and is used in the body
-    abstract = Abstract(parameters=["x"], body=x)
-    check_term(abstract, context())
-
+def test_check_term_letrec_duplicate_binders():
+    term = LetRec(
+        bindings=[
+            ("x", Immediate(value=0)),
+            ("x", Immediate(value=1)),
+        ],
+        body=Reference(name="x"),
+    )
 
 def test_check_abstract_multiple_param():  # makes an abstract with parameters x and y and body x so should pass because x is a valid parameter and is used in the body even though y is not used but is still a valid parameter
     abstract = Abstract(parameters=["x", "y"], body=x)
@@ -109,10 +128,8 @@ def test_check_abstract_duplicate_param():  # makes an abstract with duplicate p
         check_term(abstract, context())
 
 
-def test_check_abstract_unknown_param():  # makes an abstract with parameter y and body x so should fail because x is not a parameter and is not defined anywhere else in the abstract
-    abstract = Abstract(parameters=["y"], body=x)
-    with pytest.raises(ValueError):
-        check_term(abstract, context())
+def test_check_term_reference_bound():
+    term = Reference(name="x")
 
 
 def test_check_abstract_param_empty():  # makes an abstract with parameter x and body Imm so should pass because even though x is not used in the body it is still a valid parameter and the body is valid
@@ -121,10 +138,8 @@ def test_check_abstract_param_empty():  # makes an abstract with parameter x and
         check_term(abstract, context())
 
 
-# apply
-def test_check_apply_valid():  # makes an apply with target x and arguments x and x and context has x so should pass because x is a valid target and argument and is defined in the context
-    apply = Apply(target=x, arguments=[x])
-    check_term(apply, context("x"))
+def test_check_term_reference_free():
+    term = Reference(name="x")
 
 
 def test_check_apply_unknown_target():  # makes an apply with target x and arguments x and x and context has y so should fail because x is not defined in the context and is not a valid target or argument
@@ -133,10 +148,11 @@ def test_check_apply_unknown_target():  # makes an apply with target x and argum
         check_term(apply, context("y"))
 
 
-def test_check_apply_unknown_argument():  # makes an apply with target Imm and arguments x, should fail because the argument x is not defined in the context and is not a valid argument even though the target is valid
-    apply = Apply(target=Imm, arguments=[x])
-    with pytest.raises(ValueError):
-        check_term(apply, context())
+def test_check_term_abstract():
+    term = Abstract(
+        parameters=["x"],
+        body=Immediate(value=0),
+    )
 
 
 def test_check_apply_no_target():  # makes an apply with target x and no arguments and context has x so should pass because x is a valid target and there are no arguments to check
@@ -144,24 +160,11 @@ def test_check_apply_no_target():  # makes an apply with target x and no argumen
     check_term(apply, context("x"))
 
 
-# allocate
-def test_check_allocate_valid():  # makes an allocate with arbitrary count 4 so should pass because it is a valid count
-    term = Allocate(count=4)
-    check_term(term, context())
-
-
-# only do the one test for allocate because it passes as long as the count is valid which gets checked already
-
-
-# begin
-def test_check_begin_valid():  # makes a begin with effects Imm and Imm and value Imm so should pass because the effects and value are all valid terms
-    term = Begin(effects=[Imm, Imm], value=Imm)
-    check_term(term, context("x"))
-
-
-def test_check_begin_no_effects():  # makes a begin with no effects and value Imm so should pass because the value is a valid term and there are no effects to check
-    term = Begin(effects=[], value=Imm)
-    check_term(term, context("x"))
+def test_check_term_abstract_duplicate_parameters():
+    term = Abstract(
+        parameters=["x", "x"],
+        body=Immediate(value=0),
+    )
 
 
 def test_check_begin_no_value():  # makes a begin with x as an effect and no value so should fail because the value is not a valid term and is not defined in the context
@@ -170,10 +173,11 @@ def test_check_begin_no_value():  # makes a begin with x as an effect and no val
         check_term(term, context())
 
 
-def test_check_begin_floating_value():  # makes a begin with no effects and x as a value so should fail because the value is not a valid term and is not defined in the context
-    term = Begin(effects=[], value=x)
-    with pytest.raises(ValueError):
-        check_term(term, context())
+def test_check_term_apply():
+    term = Apply(
+        target=Reference(name="x"),
+        arguments=[Immediate(value=0)],
+    )
 
 
 # branch
@@ -182,10 +186,8 @@ def test_check_branch_valid():  # makes a branch with operator < and left x and 
     check_term(term, context())
 
 
-def test_check_branch_invalid_left():  # makes a branch with operator < and left x and right Imm and consequent Imm and otherwise Imm so should fail because the left is not a valid term
-    term = Branch(operator="<", left=x, right=Imm, consequent=Imm, otherwise=Imm)
-    with pytest.raises(ValueError):
-        check_term(term, context())
+def test_check_term_immediate():
+    term = Immediate(value=0)
 
 
 def test_check_branch_invalid_right():  # makes a branch with operator < and left Imm and right x and consequent Imm and otherwise Imm so should fail because the right is not a valid term
@@ -194,10 +196,12 @@ def test_check_branch_invalid_right():  # makes a branch with operator < and lef
         check_term(term, context())
 
 
-def test_check_branch_invalid_consequent():  # makes a branch with operator < and left Imm and right Imm and consequent x and otherwise Imm so should fail because the consequent is not a valid term
-    term = Branch(operator="<", left=Imm, right=Imm, consequent=x, otherwise=Imm)
-    with pytest.raises(ValueError):
-        check_term(term, context())
+def test_check_term_primitive():
+    term = Primitive(
+        operator="+",
+        left=Immediate(value=1),
+        right=Immediate(value=2),
+    )
 
 
 def test_check_branch_invalid_otherwise():  # makes a branch with operator < and left Imm and right Imm and consequent Imm and otherwise x so should fail because the otherwise is not a valid term
@@ -206,7 +210,14 @@ def test_check_branch_invalid_otherwise():  # makes a branch with operator < and
         check_term(term, context())
 
 
-# if multiple things are invalid then the tests should still catch it
+def test_check_term_branch():
+    term = Branch(
+        operator="<",
+        left=Immediate(value=1),
+        right=Immediate(value=2),
+        consequent=Immediate(value=0),
+        otherwise=Immediate(value=1),
+    )
 
 
 # Let
@@ -215,10 +226,8 @@ def test_check_let_valid():  # makes a let with bindings x and x and body x so s
     check_term(term, context())
 
 
-def test_check_let_duplicate_binders():  # makes a let with duplicate bindings x and x and body x so should fail because of the duplicate binders
-    term = Let(bindings=[("x", Imm), ("x", Imm)], body=x)
-    with pytest.raises(ValueError):
-        check_term(term, context())
+def test_check_term_allocate():
+    term = Allocate(count=0)
 
 
 def test_check_let_unknown_binding():  # makes a let with binding x and body y so should fail because y is not defined in the context of the body and is not a valid term
@@ -227,19 +236,22 @@ def test_check_let_unknown_binding():  # makes a let with binding x and body y s
         check_term(term, context())
 
 
-def test_check_let_valid_multiple_bindings():  # makes a let with bindings x and y and body x so should pass because the bindings are valid and the body is a valid term and the binding x is defined in the context of the body even though y is not used but is still a valid binding
-    term = Let(bindings=[("x", Imm), ("y", Imm)], body=x)
-    check_term(term, context())
+def test_check_term_load():
+    term = Load(
+        base=Reference(name="x"),
+        index=0,
+    )
 
 
 # letrec
 
 
-def test_check_letrec_valid():
-    # makes a letrec with a binding x that is an abstract with no parameters and a self reference to x in the body
-    # and the body is a reference to x so should pass because the binding is valid and the body is a valid term and the binding is defined in the context of the body
-    term = LetRec(bindings=[("x", Abstract(parameters=[], body=x))], body=x)
-    check_term(term, context())
+def test_check_term_store():
+    term = Store(
+        base=Reference(name="x"),
+        index=0,
+        value=Immediate(value=0),
+    )
 
 
 def test_check_letrec_duplicate_binders():  # makes a letrec with duplicate bindings x and x and body x so should fail because of the duplicate binders
@@ -250,10 +262,11 @@ def test_check_letrec_duplicate_binders():  # makes a letrec with duplicate bind
         check_term(term, context())
 
 
-def test_check_letrec_unknown_binding():  # makes a letrec with binding x and self reference to y so should fail because y is not defined in the context of the body and is not a valid term
-    term = LetRec(bindings=[("x", Reference(name="y"))], body=Imm)
-    with pytest.raises(ValueError):
-        check_term(term, context())
+def test_check_term_begin():
+    term = Begin(
+        effects=[Immediate(value=0)],
+        value=Immediate(value=0),
+    )
 
 
 def test_check_letrec_unknown_body():  # makes a letrec with binding x and body y so should fail because y is not defined in the context of the body and is not a valid term
@@ -262,10 +275,11 @@ def test_check_letrec_unknown_body():  # makes a letrec with binding x and body 
         check_term(term, context())
 
 
-# load
-def test_check_load_valid():  # makes a load with arbitrary address 0 so should pass because it is a valid address
-    term = Load(base=x, index=0)
-    check_term(term, context("x"))
+def test_check_program():
+    program = Program(
+        parameters=[],
+        body=Immediate(value=0),
+    )
 
 
 def test_check_load_invalid():  # makes a load with arbitrary address 0 so should pass because it is a valid address
@@ -274,10 +288,11 @@ def test_check_load_invalid():  # makes a load with arbitrary address 0 so shoul
         check_term(term, context())
 
 
-# primitive
-def test_check_primitive_valid():  # makes a primitive with operator + and left x and right x and context has x so should pass because the operator is valid and the left and right are valid terms and are defined in the context
-    term = Primitive(operator="+", left=x, right=x)
-    check_term(term, context("x"))
+def test_check_program_duplicate_parameters():
+    program = Program(
+        parameters=["x", "x"],
+        body=Immediate(value=0),
+    )
 
 
 def test_check_primitive_left_invalid():  # makes a primitive with operator + and left y and right x and context has x so should fail because y is not defined in the context
