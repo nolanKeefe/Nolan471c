@@ -39,7 +39,7 @@ def test_eliminate_letrec_program_params():
 
 
 # let tests
-def test_check_term_let_params():
+def test_eliminate_letrec_let_params():
     term = L3.Let(
         bindings=[
             ("x", L3_Imm),
@@ -61,7 +61,7 @@ def test_check_term_let_params():
     assert actual == expected
 
 
-def test_check_term_let_empty():
+def test_eliminate_letrec_let_empty():
     term = L3.Let(
         bindings=[],
         body=L3_Imm,
@@ -77,3 +77,25 @@ def test_check_term_let_empty():
     actual = eliminate_letrec_term(term, context)
 
     assert actual == expected
+
+
+def test_eliminate_letrec_let_recurse_value():
+    # the value of the binding is a primitive operation that uses an immediate value
+    # checking that the let will properly recurse when converting
+    term = L3.Let(
+        bindings=[("x", L3.Primitive(operator="+", left=L3_Imm, right=L3_Imm))],
+        body=L3.Reference(name="x"),
+    )
+    expected = L2.Let(
+        bindings=[("x", L2.Primitive(operator="+", left=L2_Imm, right=L2_Imm))],
+        body=L2.Reference(name="x"),
+    )
+    assert eliminate_letrec_term(term, context) == expected
+
+
+def test_eliminate_letrec_let_does_not_extend_context():
+    # Let names are not placed in the letrec context
+    # reference in the body to a let-bound name remains a Reference, not a Load.
+    term = L3.Let(bindings=[("x", L3_Imm)], body=L3_Imm)
+    expected = L2.Let(bindings=[("x", L2_Imm)], body=L2_Imm)
+    assert eliminate_letrec_term(term, context) == expected
