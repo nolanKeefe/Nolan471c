@@ -275,3 +275,66 @@ def test_eliminate_letrec_branch_letrec():
 
 
 # allocate tests
+def test_eliminate_letrec_allocate():
+    # an allocate should just be converted to the same allocate in L2 with the count converted
+    term = L3.Allocate(count=0)
+    expected = L2.Allocate(count=0)
+    assert eliminate_letrec_term(term, ctx()) == expected
+
+
+# load tests
+def test_eliminate_letrec_load():
+    # a load should just be converted to the same load in L2 with the base and index converted
+    term = L3.Load(base=L3.Reference(name="x"), index=0)
+    expected = L2.Load(base=L2.Reference(name="x"), index=0)
+    assert eliminate_letrec_term(term, ctx()) == expected
+
+
+def test_eliminate_letrec_load_letrec():
+    # a load in a letrec context should be converted to an L2 load with the base converted
+    term = L3.Load(base=L3.Reference(name="x"), index=1)
+    expected = L2.Load(base=L2.Load(base=L2.Reference(name="x"), index=0), index=1)
+    assert eliminate_letrec_term(term, ctx("x")) == expected
+
+
+# store tests
+
+
+def test_eliminate_letrec_store():
+    # a store should just be converted to the same store in L2 with the base, index, and value converted
+    term = L3.Store(base=L3.Reference(name="x"), index=0, value=L3_Imm)
+    expected = L2.Store(base=L2.Reference(name="x"), index=0, value=L2_Imm)
+    assert eliminate_letrec_term(term, ctx()) == expected
+
+
+def test_eliminate_letrec_store_letrec():
+    # a store in a letrec context should be converted to an L2 store with the base and value converted
+    term = L3.Store(base=L3.Reference(name="x"), index=1, value=L3.Reference(name="y"))
+    expected = L2.Store(
+        base=L2.Load(base=L2.Reference(name="x"), index=0), index=1, value=L2.Load(base=L2.Reference(name="y"), index=0)
+    )
+    assert eliminate_letrec_term(term, ctx("x", "y")) == expected
+
+
+# begin tests
+def test_eliminate_letrec_begin():
+    # a begin should just be converted to the same begin in L2 with the effects and value converted
+    term = L3.Begin(effects=[L3_Imm], value=L3_Imm)
+    expected = L2.Begin(effects=[L2_Imm], value=L2_Imm)
+    assert eliminate_letrec_term(term, ctx()) == expected
+
+
+def test_eliminate_letrec_begin_no_effects():
+    # a begin with no effects should still be converted correctly
+    term = L3.Begin(effects=[], value=L3_Imm)
+    expected = L2.Begin(effects=[], value=L2_Imm)
+    assert eliminate_letrec_term(term, ctx()) == expected
+
+
+def test_eliminate_letrec_begin_letrec():
+    # a begin in a letrec context should be converted to an L2 begin with the effects and value converted
+    term = L3.Begin(effects=[L3.Reference(name="x")], value=L3.Reference(name="y"))
+    expected = L2.Begin(
+        effects=[L2.Load(base=L2.Reference(name="x"), index=0)], value=L2.Load(base=L2.Reference(name="y"), index=0)
+    )
+    assert eliminate_letrec_term(term, ctx("x", "y")) == expected
