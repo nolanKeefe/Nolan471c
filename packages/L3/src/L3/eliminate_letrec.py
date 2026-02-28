@@ -33,7 +33,8 @@ def eliminate_letrec_term(
             # need to convert the letrec into a let
             # the bindings can be rebound to the same name in the body
             # the load should be obtained by reference I think
-            extended = {**context, **dict.fromkeys(name for name, _ in bindings)}
+            local: Context = dict.fromkeys((name for name, _ in bindings), None)
+            extended: Context = {**context, **local}
             recur_extended = partial(eliminate_letrec_term, context=extended)
             return L2.Let(
                 bindings=[(name, recur_extended(value)) for name, value in bindings],
