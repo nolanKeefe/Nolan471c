@@ -33,17 +33,18 @@ def eliminate_letrec_term(
             # need to convert the letrec into a let
             # the bindings can be rebound to the same name in the body
             # the load should be obtained by reference I think
+            extended = {**context, **dict.fromkeys([name for name, _ in bindings])}
+            recur_extended = partial(eliminate_letrec_term, context=extended)
             return L2.Let(
-                bindings=[(name, recur(value)) for name, value in bindings],
-                body=recur(body, context={**context, **dict.fromkeys([name for name, _ in bindings])}),
+                bindings=[(name, recur_extended(value)) for name, value in bindings],
+                body=recur_extended(body),
             )
 
         case L3.Reference(name=name):
             # if name is a recursive variable -> (Load (Reference name)))
             # else (Reference name)
-            if (
-                name not in context
-            ):  # if its not in the context then it is a recursive variable so we need to return a load of the reference
+            if name in context:
+                # if its not in the context then it is a recursive variable so we need to return a load of the reference
                 return L2.Load(base=L2.Reference(name=name), index=0)
             else:  # otherwise we can just return the reference in L2
                 return L2.Reference(name=name)
@@ -97,8 +98,8 @@ def eliminate_letrec_term(
                 value=recur(value),
             )
 
-        case L3.Begin(effects=_effects, value=value):  # unchanged
-            return L2.Begin(effects=[], value=recur(value))
+        case L3.Begin(effects=effects, value=value):  # unchanged just need to get all effects
+            return L2.Begin(effects=[recur(effect) for effect in effects], value=recur(value))
 
 
 def eliminate_letrec_program(
