@@ -9,12 +9,10 @@ from L3.eliminate_letrec import Context, eliminate_letrec_program, eliminate_let
 L3_Imm = L3.Immediate(value=0)
 L2_Imm = L2.Immediate(value=0)  # just some basic immediate value to use in tests
 
-context: Context = {
-    "x": None,
-    "y": None,
-    "p": None,
-    "q": None,
-}  # makes a context with given names as letrec identifiers
+
+def ctx(*names: str) -> Context:
+    """Build a context containing exactly the given names as letrec-bound identifiers."""
+    return dict.fromkeys(names, None)
 
 
 # Program tests
@@ -52,8 +50,6 @@ def test_eliminate_letrec_let_params():
         body=L3.Reference(name="x"),
     )
 
-    context: Context = {}
-
     expected = L2.Let(
         bindings=[
             ("x", L2_Imm),
@@ -61,7 +57,7 @@ def test_eliminate_letrec_let_params():
         body=L2.Reference(name="x"),
     )
 
-    actual = eliminate_letrec_term(term, context)
+    actual = eliminate_letrec_term(term, ctx())
 
     assert actual == expected
 
@@ -72,14 +68,12 @@ def test_eliminate_letrec_let_empty():
         body=L3_Imm,
     )
 
-    context: Context = {}
-
     expected = L2.Let(
         bindings=[],
         body=L2_Imm,
     )
 
-    actual = eliminate_letrec_term(term, context)
+    actual = eliminate_letrec_term(term, ctx())
 
     assert actual == expected
 
@@ -95,7 +89,7 @@ def test_eliminate_letrec_let_recurse_value():
         bindings=[("x", L2.Primitive(operator="+", left=L2_Imm, right=L2_Imm))],
         body=L2.Reference(name="x"),
     )
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_let_does_not_extend_context():
@@ -103,7 +97,7 @@ def test_eliminate_letrec_let_does_not_extend_context():
     # reference in the body to a let-bound name remains a Reference, not a Load.
     term = L3.Let(bindings=[("x", L3_Imm)], body=L3_Imm)
     expected = L2.Let(bindings=[("x", L2_Imm)], body=L2_Imm)
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 # LetRec tests here comes the wopper
@@ -120,7 +114,7 @@ def test_eliminate_letrec_letrec_become_let():
         bindings=[("x", L2_Imm)],
         body=L2.Load(base=L2.Reference(name="x"), index=0),
     )
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_letrec_self_reference_value():
@@ -135,7 +129,7 @@ def test_eliminate_letrec_letrec_self_reference_value():
         bindings=[("x", L2.Load(base=L2.Reference(name="x"), index=0))],
         body=L2_Imm,
     )
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_letrec_nonrecursive_ref():
@@ -149,7 +143,7 @@ def test_eliminate_letrec_letrec_nonrecursive_ref():
         bindings=[("x", L2_Imm)],
         body=L2.Reference(name="y"),
     )
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 # reference tests
@@ -157,22 +151,22 @@ def test_eliminate_letrec_letrec_nonrecursive_ref():
 
 def test_eliminate_letrec_reference_not_in_context():
     # A reference that is not in the context should remain a Reference
-    term = L3.Reference(name="y")
-    expected = L2.Reference(name="y")
-    assert eliminate_letrec_term(term, context) == expected
+    term = L3.Reference(name="x")
+    expected = L2.Reference(name="x")
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_reference_in_context():
     # A reference that is in the context should be converted to a Load of the Reference
     term = L3.Reference(name="x")
     expected = L2.Load(base=L2.Reference(name="x"), index=0)
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx("x")) == expected
 
 
 # immediate tests
 def test_eliminate_letrec_immediate():
     # an immediate value should just be converted to the same immediate value in L2
-    assert eliminate_letrec_term(L3_Imm, context) == L2_Imm
+    assert eliminate_letrec_term(L3_Imm, ctx()) == L2_Imm
 
 
 # Abstract tests
@@ -182,14 +176,14 @@ def test_eliminate_letrec_abstract():
     # an abstract should just be converted to the same abstract in L2 with the body converted
     term = L3.Abstract(parameters=["x"], body=L3_Imm)
     expected = L2.Abstract(parameters=["x"], body=L2_Imm)
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_abstract_letrec_context():
     # an abstract in a letrec context should be converted to an L2 abstract with the body converted
     term = L3.Abstract(parameters=[], body=L3.Reference(name="x"))
     expected = L2.Abstract(parameters=[], body=L2.Load(base=L2.Reference(name="x"), index=0))
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx("x")) == expected
 
 
 # apply tests
@@ -200,7 +194,7 @@ def test_eliminate_letrec_apply():
     # so long as it doesnt have a recursive reference in the target or arguments that would be converted to a load
     term = L3.Apply(target=L3.Reference(name="x"), arguments=[L3_Imm])
     expected = L2.Apply(target=L2.Reference(name="x"), arguments=[L2_Imm])
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_term_apply_no_args():
@@ -208,14 +202,14 @@ def test_eliminate_letrec_term_apply_no_args():
     # exercising the empty-argument-list branch of the list comprehension.
     term = L3.Apply(target=L3_Imm, arguments=[])
     expected = L2.Apply(target=L2_Imm, arguments=[])
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_term_apply_letrec_target_becomes_load():
     # A letrec-bound name used as the call target must be rewritten to a Load.
     term = L3.Apply(target=L3.Reference(name="x"), arguments=[])
     expected = L2.Apply(target=L2.Load(base=L2.Reference(name="x"), index=0), arguments=[])
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx("x")) == expected
 
 
 # primitive tests
@@ -223,21 +217,21 @@ def test_eliminate_letrec_primitive():
     # a primitive should just be converted to the same primitive in L2 with the left and right converted
     term = L3.Primitive(operator="+", left=L3_Imm, right=L3_Imm)
     expected = L2.Primitive(operator="+", left=L2_Imm, right=L2_Imm)
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_primitive_letrec_left():
     # a primitive in a letrec context should be converted to an L2 primitive with the left and right converted
     term = L3.Primitive(operator="+", left=L3.Reference(name="x"), right=L3_Imm)
     expected = L2.Primitive(operator="+", left=L2.Load(base=L2.Reference(name="x"), index=0), right=L2_Imm)
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx("x")) == expected
 
 
 def test_eliminate_letrec_primitive_letrec_right():
     # a primitive in a letrec context should be converted to an L2 primitive with the left and right converted
     term = L3.Primitive(operator="+", left=L3_Imm, right=L3.Reference(name="x"))
     expected = L2.Primitive(operator="+", left=L2_Imm, right=L2.Load(base=L2.Reference(name="x"), index=0))
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx("x")) == expected
 
 
 # branch tests
@@ -257,7 +251,7 @@ def test_eliminate_letrec_branch():
         consequent=L2_Imm,
         otherwise=L2_Imm,
     )
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx()) == expected
 
 
 def test_eliminate_letrec_branch_letrec():
@@ -277,7 +271,7 @@ def test_eliminate_letrec_branch_letrec():
         consequent=L2.Load(base=L2.Reference(name="p"), index=0),
         otherwise=L2.Load(base=L2.Reference(name="q"), index=0),
     )
-    assert eliminate_letrec_term(term, context) == expected
+    assert eliminate_letrec_term(term, ctx("x", "y", "p", "q")) == expected
 
 
 # allocate tests
