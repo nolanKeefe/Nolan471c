@@ -99,7 +99,7 @@ def eliminate_letrec_term(
                 value=recur(value),
             )
 
-        case L3.Begin(effects=effects, value=value):  # unchanged just need to get all effects
+        case L3.Begin(effects=effects, value=value):  # pragma: no branch
             return L2.Begin(effects=[recur(effect) for effect in effects], value=recur(value))
 
 
@@ -107,5 +107,5 @@ def eliminate_letrec_program(
     program: L3.Program,
 ) -> L2.Program:
     match program:
-        case L3.Program(parameters=parameters, body=body):  # unchanged
+        case L3.Program(parameters=parameters, body=body):  # pragma: no branch
             return L2.Program(parameters=parameters, body=eliminate_letrec_term(body, {}))
