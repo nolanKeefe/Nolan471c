@@ -4,7 +4,7 @@ from pathlib import Path
 from lark import Lark, Token, Transformer
 from lark.visitors import v_args  # pyright: ignore[reportUnknownVariableType]
 
-from .syntax import Identifier, Immediate, Let, LetRec, Program, Reference, Term
+from .syntax import Abstract, Apply, Identifier, Immediate, Let, LetRec, Primitive, Program, Reference, Term
 
 
 class AstTransformer(Transformer[Token, Program | Term]):
@@ -84,6 +84,41 @@ class AstTransformer(Transformer[Token, Program | Term]):
         value: Token,  # token from IDENTIFIER
     ) -> Term:
         return Immediate(value=int(value))
+
+    @v_args(inline=True)
+    def abstract(
+        self,
+        _lambda: Token,  # lambda token we discarded
+        parameters: Sequence[Identifier],  # token from IDENTIFIER
+        body: Term,
+    ) -> Term:
+        return Abstract(
+            parameters=list(parameters),  # need to convert the parameters to a list so it isn't deemd a single thing
+            body=body,
+        )
+
+    @v_args(inline=True)
+    def apply(
+        self,
+        arguments: Sequence[Term],  # due to how its a term into a term it kinda clumps
+    ) -> Term:
+        # target is the first arg, the args are the rest
+        return Apply(target=arguments[0], arguments=list(arguments[1:]))
+
+    @v_args(inline=True)
+    def primitive(
+        self,
+        operator: Token,  # One of "+", "-", "*" as a Token
+        left: Term,
+        right: Term,
+    ) -> Term:
+        # str(operator) extracts the operator symbol from the Token.
+        # The pyright ignore is needed because str is wider than Literal["+","-","*"],
+        return Primitive(
+            operator=str(operator),  # pyright: ignore[reportArgumentType]
+            left=left,
+            right=right,
+        )
 
 
 def parse_term(source: str) -> Term:
