@@ -59,8 +59,6 @@ def test_eliminate_letrec_let_params():
 
     actual = eliminate_letrec_term(term, ctx())
 
-    expected = L2.Immediate(value=0)
-
     assert actual == expected
 
 
