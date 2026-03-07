@@ -1,6 +1,7 @@
 program     : "(" PROGRAM "(" parameters ")" term ")"
 parameters  : IDENTIFIER*
 
+//List of all valid terms we need to deal with
 term        : let
             | letrec
             | reference
@@ -24,33 +25,34 @@ binding     : "(" IDENTIFIER term ")"
 
 abstract    : "(" LAMBDA "(" parameters ")" term ")"
 
+// apply is catch-all function application: (f arg1 arg2 ...)
+// term* allows zero or more arguments.
 apply       : "(" term term* ")" //Apply is 
 
 immediate   : NUMBER
 
 primitive   : "(" OPERATOR term term ")"
 
-branch      : "if (" COMPARE term term ")" term term ")" //"(if (< 1 2) 1 0)" format from test_parse
+branch      : "(" "if" "(" COMPARE term term ")" term term ")" //"(if (< 1 2) 1 0)" format from test_parse
 
-allocate    : "(" "allocate" NUMBER ")" //as it just makes a block of memory it only takes the number
 
-load        : "(" "load" IDENTIFIER term ")" //load on the otherhand also has to know where to pull from being an identifier
+allocate    : "(" "allocate" NUMBER ")" //Takes a just number as it shouldn't use vars n stuff
 
-store       : "(" "store" term NUMBER term ")" 
-//starts with a term as thats likely a reference then the index and then whatever value we are inputting
+load        : "(" "load" term NUMBER ")"//Load also has a Number for that reason
+
+store       : "(" "store" term NUMBER term ")"
+//starts with a term as thats likely a reference then the number index and then whatever value we are inputting
 //it's a term as it could be pulling from a reference/ other term
 
-begin       : "(" "begin"  term+")" //has the ability to intake more than 1 term as the first couple are deemed effects 
+begin       : "(" "begin"  term+ ")" //has the ability to intake more than 1 term as the first couple are deemed effects 
 
 reference   : IDENTIFIER //variable names
-immediate   : NUMBER //some non-negative integer
 
 //.2 indicates a higher priority when checking things in the parsing makes them not tokenize as IDENTIFIERs
 PROGRAM.2   : "l3"
 LET.2       : "let"
 LETREC.2    : "letrec"
 LAMBDA.2    : "\\" | "lambda" | "λ" //designates a lambda expression
-REFERENCE.2 : "reference"
 
 //basic terms we use
 OPERATOR.2  : "+" | "-" | "*" //list of operators
@@ -60,8 +62,3 @@ IDENTIFIER  : /[a-zA-Z_][a-zA-Z0-9_]*/ // any name so long as it starts with a l
 NUMBER      : /[0-9]+/ // positive numbers can be 0-9 the + means multiple numbers can be had
 
 %ignore /\s+/ //supposed to ignore whitespace between tokens
-
--------------------------------------
-
-# Silently discard all whitespace between tokens.
-%ignore /\s+/
