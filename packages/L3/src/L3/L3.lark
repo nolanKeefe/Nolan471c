@@ -36,8 +36,9 @@ primitive   : "(" OPERATOR term term ")"
 
 branch      : "(" "if" "(" COMPARATOR term term ")" term term ")"
 
-// allocate/load/store/begin use named terminals with .2 priority so their keywords
-// are never tokenised as IDENTIFIER — same reason LET and LETREC have .2 priority.
+// allocate/load/store use named terminals with .2 priority so their keywords
+// are never tokenised as IDENTIFIER — same reason LET and LETREC have .2 priority
+// it wasn't working with begin so it gets its own special snowflake deal
 allocate    : "(" ALLOCATE NUMBER ")"
 load        : "(" LOAD term NUMBER ")"
 store       : "(" STORE term NUMBER term ")"
@@ -50,11 +51,10 @@ PROGRAM.2   : "l3"
 LET.2       : "let"
 LETREC.2    : "letrec"
 LAMBDA.2    : "\\" | "lambda" | "λ"
-IF.2        : "if"
+
 ALLOCATE.2  : "allocate"
 LOAD.2      : "load"
 STORE.2     : "store"
-BEGIN.2     : "begin"
 
 OPERATOR    : "+" | "-" | "*"
 COMPARATOR  : "<" | "=="
