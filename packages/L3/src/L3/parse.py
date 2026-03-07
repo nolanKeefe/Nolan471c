@@ -32,15 +32,16 @@ class AstTransformer(Transformer[Token, Program | Term]):
         body: Term,
     ) -> Program:
         return Program(
-            parameters=parameters,
+            parameters=list(parameters),
             body=body,
         )
 
     def parameters(
         self,
-        parameters: Sequence[Identifier],
+        parameters: Sequence[Token],
     ) -> Sequence[Identifier]:
-        return parameters
+        # Lark gives us raw Token objects — convert each to a plain str (Identifier).
+        return [str(p) for p in parameters]
 
     @v_args(inline=True)
     def term(
@@ -82,54 +83,56 @@ class AstTransformer(Transformer[Token, Program | Term]):
     @v_args(inline=True)
     def binding(
         self,
-        name: Identifier,
+        name: Token,
         value: Term,
     ) -> tuple[Identifier, Term]:
-        return name, value
+        # str(name) converts the raw IDENTIFIER Token to a plain string.
+        return str(name), value
 
     @v_args(inline=True)
     def reference(
         self,
-        name: Token,  # token from IDENTIFIER
+        name: Token,
     ) -> Term:
         return Reference(name=str(name))
 
     @v_args(inline=True)
     def immediate(
         self,
-        value: Token,  # token from IDENTIFIER
+        value: Token,
     ) -> Term:
         return Immediate(value=int(value))
 
     @v_args(inline=True)
     def abstract(
         self,
-        _lambda: Token,  # lambda token we discarded
-        parameters: Sequence[Identifier],  # token from IDENTIFIER
+        _lambda: Token,
+        parameters: Sequence[Identifier],
         body: Term,
     ) -> Term:
         return Abstract(
-            parameters=list(parameters),  # need to convert the parameters to a list so it isn't deemd a single thing
+            parameters=list(parameters),
             body=body,
         )
 
-    @v_args(inline=True)
     def apply(
         self,
-        arguments: Sequence[Term],  # due to how its a term into a term it kinda clumps
+        args: Sequence[Term],
     ) -> Term:
-        # target is the first arg, the args are the rest
-        return Apply(target=arguments[0], arguments=list(arguments[1:]))
+        # apply cannot use @v_args(inline=True) because term* produces a variable
+        # number of children. args[0] is the target; args[1:] are the arguments.
+        return Apply(
+            target=args[0],
+            arguments=list(args[1:]),
+        )
 
     @v_args(inline=True)
     def primitive(
         self,
-        operator: Token,  # One of "+", "-", "*" as a Token
+        operator: Token,
         left: Term,
         right: Term,
     ) -> Term:
-        # str(operator) extracts the operator symbol from the Token.
-        # The pyright ignore is needed because str is wider than Literal["+","-","*"],
         return Primitive(
             operator=str(operator),  # pyright: ignore[reportArgumentType]
             left=left,
@@ -146,7 +149,6 @@ class AstTransformer(Transformer[Token, Program | Term]):
         otherwise: Term,
     ) -> Term:
         return Branch(
-            # same thing as prev where we ignore the string things
             operator=str(operator),  # pyright: ignore[reportArgumentType]
             left=left,
             right=right,
@@ -155,25 +157,41 @@ class AstTransformer(Transformer[Token, Program | Term]):
         )
 
     @v_args(inline=True)
-    def allocate(self, count: Token) -> Term:
-        return Allocate(
-            count=int(count),
-        )
+    def allocate(
+        self,
+        _allocate: Token,
+        count: Token,
+    ) -> Term:
+        return Allocate(count=int(count))
 
     @v_args(inline=True)
-    def load(self, base: Term, index: Token) -> Term:
+    def load(
+        self,
+        _load: Token,
+        base: Term,
+        index: Token,
+    ) -> Term:
         return Load(base=base, index=int(index))
 
     @v_args(inline=True)
-    def store(self, base: Term, index: Token, value: Term) -> Term:
+    def store(
+        self,
+        _store: Token,
+        base: Term,
+        index: Token,
+        value: Term,
+    ) -> Term:
         return Store(base=base, index=int(index), value=value)
 
-    # length varies can't inline it
     def begin(
         self,
-        effects: Sequence[Term],
+        terms: Sequence[Term],
     ) -> Term:
-        return Begin(effects=list(effects[:-1]), value=effects[-1])
+        # begin cannot use @v_args(inline=True) because term+ produces a variable
+        # number of children. All but the last are effects; the last is the value.
+        # The BEGIN keyword token is filtered out automatically since it's a Terminal,
+        # not a rule — Lark only passes rule results to the transformer by default.
+        return Begin(effects=list(terms[:-1]), value=terms[-1])
 
 
 def parse_term(source: str) -> Term:

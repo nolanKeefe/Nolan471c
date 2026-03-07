@@ -1,20 +1,21 @@
 program     : "(" PROGRAM "(" parameters ")" term ")"
 parameters  : IDENTIFIER*
 
-//List of all valid terms we need to deal with
+// term lists all valid expression forms.
+// Keyword forms must come BEFORE apply so Lark tries specific rules first and never
+// accidentally swallows (allocate ...) or (begin ...) as generic function application.
 term        : let
             | letrec
-            | reference
             | abstract
-            | apply
-            | immediate
             | primitive
             | branch
             | allocate
             | load
             | store
             | begin
-
+            | apply
+            | reference
+            | immediate
 
 let         : "(" LET "(" bindings ")" term ")"
 
@@ -26,39 +27,39 @@ binding     : "(" IDENTIFIER term ")"
 abstract    : "(" LAMBDA "(" parameters ")" term ")"
 
 // apply is catch-all function application: (f arg1 arg2 ...)
-// term* allows zero or more arguments.
-apply       : "(" term term* ")" //Apply is 
+// Listed after all keyword forms so it never swallows a keyword expression.
+apply       : "(" term term* ")"
 
 immediate   : NUMBER
 
 primitive   : "(" OPERATOR term term ")"
 
-branch      : "(" "if" "(" COMPARE term term ")" term term ")" //"(if (< 1 2) 1 0)" format from test_parse
+branch      : "(" "if" "(" COMPARATOR term term ")" term term ")"
 
+// allocate/load/store/begin use named terminals with .2 priority so their keywords
+// are never tokenised as IDENTIFIER — same reason LET and LETREC have .2 priority.
+allocate    : "(" ALLOCATE NUMBER ")"
+load        : "(" LOAD term NUMBER ")"
+store       : "(" STORE term NUMBER term ")"
+begin       : "(" "begin" term+ ")"
 
-allocate    : "(" "allocate" NUMBER ")" //Takes a just number as it shouldn't use vars n stuff
+reference   : IDENTIFIER
 
-load        : "(" "load" term NUMBER ")"//Load also has a Number for that reason
-
-store       : "(" "store" term NUMBER term ")"
-//starts with a term as thats likely a reference then the number index and then whatever value we are inputting
-//it's a term as it could be pulling from a reference/ other term
-
-begin       : "(" "begin"  term+ ")" //has the ability to intake more than 1 term as the first couple are deemed effects 
-
-reference   : IDENTIFIER //variable names
-
-//.2 indicates a higher priority when checking things in the parsing makes them not tokenize as IDENTIFIERs
+// High-priority terminals (.2) prevent keywords from tokenising as IDENTIFIER.
 PROGRAM.2   : "l3"
 LET.2       : "let"
 LETREC.2    : "letrec"
-LAMBDA.2    : "\\" | "lambda" | "λ" //designates a lambda expression
+LAMBDA.2    : "\\" | "lambda" | "λ"
+IF.2        : "if"
+ALLOCATE.2  : "allocate"
+LOAD.2      : "load"
+STORE.2     : "store"
+BEGIN.2     : "begin"
 
-//basic terms we use
-OPERATOR.2  : "+" | "-" | "*" //list of operators
-COMPARE.2   : "<" | "==" //Comparison operators can be < or == 
+OPERATOR    : "+" | "-" | "*"
+COMPARATOR  : "<" | "=="
 
-IDENTIFIER  : /[a-zA-Z_][a-zA-Z0-9_]*/ // any name so long as it starts with a letter or _ as we don't want things to start with numbers
-NUMBER      : /[0-9]+/ // positive numbers can be 0-9 the + means multiple numbers can be had
+IDENTIFIER  : /[a-zA-Z_][a-zA-Z0-9_]*/
+NUMBER      : /[0-9]+/
 
-%ignore /\s+/ //supposed to ignore whitespace between tokens
+%ignore /\s+/
