@@ -43,17 +43,21 @@ def constant_folding_term(
             pass
 
         case Primitive(operator=operator, left=left, right=right):
-            match operator:
+            match operator:  # checks the operator
                 case "+":
                     match recur(left), recur(right):
+                        # 2 immediates case
                         case Immediate(value=i1), Immediate(value=i2):
                             return Immediate(value=i1 + i2)
 
+                        # left is 0 so it is just the right
                         case Immediate(
                             value=0
                         ), right:  # if the left is 0 we know it's gonna just be right even if it is a var
                             return right
 
+                        # Both sides are addition with an immediate left
+                        # (+(+ 1 a) (+ 1 b)) => (+ 2 (+ a b))
                         case [
                             Primitive(operator="+", left=Immediate(value=i1), right=left),
                             Primitive(operator="+", left=Immediate(value=i2), right=right),
@@ -67,6 +71,24 @@ def constant_folding_term(
                                     right=right,
                                 ),
                             )
+                        # Similar to above but its mixing addition and subtraction
+                        # results in a subtraction case to keep consistent
+                        # (+(- 1 a) (- 1 b)) => (- 2 (+ a b))
+                        case [
+                            Primitive(operator="-", left=Immediate(value=i1), right=left),
+                            Primitive(operator="-", left=Immediate(value=i2), right=right),
+                        ]:
+                            Primitive(
+                                operator="-",
+                                left=Immediate(value=i1 + i2),
+                                right=Primitive(
+                                    operator="+",
+                                    left=left,
+                                    right=right,
+                                ),
+                            )
+
+                        # Swap case for effeciency
                         case (
                             left,
                             Immediate() as right,
@@ -79,20 +101,32 @@ def constant_folding_term(
                 # subtraction case
                 case "-":
                     match recur(left), recur(right):
-                        case Immediate(value=i1), Immediate(value=i2):
-                            return Immediate(value=i1 + i2)
+                        case Immediate(value=i1), Immediate(value=i2):  # both are immediates just do the math
+                            return Immediate(value=i1 - i2)
 
-                        case Immediate(
-                            value=0
-                        ), right:  # if the left is 0 we know it's gonna just be right even if it is a var
-                            return right
+                        # No 0 on the left case as that would result in a negative
+                        # Immediates can't be negative as we have it
 
-                        case [
+                        case [  # both sides are Primitives with 1 immediate so we can take out the immediates
+                            Primitive(operator="-", left=Immediate(value=i1), right=left),
+                            Primitive(operator="-", left=Immediate(value=i2), right=right),
+                        ]:
+                            Primitive(
+                                operator="-",  # subtract our "positives" and subtractors
+                                left=Immediate(value=i1 + i2),  # add our "positive" immediates
+                                right=Primitive(
+                                    operator="+",  # add our negatives
+                                    left=left,
+                                    right=right,
+                                ),
+                            )
+
+                        case [  # both sides are Primitives with 1 immediate so we can take out the immediates
                             Primitive(operator="+", left=Immediate(value=i1), right=left),
                             Primitive(operator="+", left=Immediate(value=i2), right=right),
                         ]:
                             Primitive(
-                                operator="+",
+                                operator="-",
                                 left=Immediate(value=i1 + i2),
                                 right=Primitive(
                                     operator="+",
@@ -100,6 +134,7 @@ def constant_folding_term(
                                     right=right,
                                 ),
                             )
+
                         case (
                             left,
                             Immediate() as right,
@@ -109,6 +144,35 @@ def constant_folding_term(
                                 left=right,
                                 right=left,
                             )
+                case "*":
+                    match recur(left), recur(right):
+                        case Immediate(value=i1), Immediate(value=i2):  # both are immediates just do the math
+                            return Immediate(value=i1 * i2)
+
+                        case [  # both sides are Primitives with 1 immediate so we can take out the immediates and multiply them
+                            Primitive(operator="*", left=Immediate(value=i1), right=left),
+                            Primitive(operator="*", left=Immediate(value=i2), right=right),
+                        ]:
+                            Primitive(
+                                operator="*",
+                                left=Immediate(value=i1 * i2),
+                                right=Primitive(
+                                    operator="*",
+                                    left=left,
+                                    right=right,
+                                ),
+                            )
+
+                        case (
+                            left,
+                            Immediate() as right,
+                        ):  # Swap the immediate to the correct side for other test functionality
+                            return Primitive(
+                                operator="-",
+                                left=right,
+                                right=left,
+                            )
+
         case Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
             pass
 

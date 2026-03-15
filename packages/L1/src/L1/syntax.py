@@ -34,7 +34,7 @@ class Abstract(BaseModel, frozen=True):
     then: Statement
 
 
-class Apply(BaseModel, frozen=True):
+class Apply(BaseModel, frozen=True):  # we apply and never return
     tag: Literal["apply"] = "apply"
     target: Identifier
     arguments: Sequence[Identifier]

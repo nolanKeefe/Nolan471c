@@ -1,4 +1,5 @@
 # should control the optimization overall, the number of repetitions, to a fixed point (until it stops changing)
+# Should monotonically decrease in size
 from .syntax import Program
 
 

@@ -9,6 +9,7 @@ from .syntax import (
     Apply,
     Begin,
     Branch,
+    Identifier,
     Immediate,
     Let,
     LetRec,
@@ -20,7 +21,7 @@ from .syntax import (
     Term,
 )
 
-type Context = Mapping[str, str]
+type Context = Mapping[Identifier, Identifier]  # makes name unique
 
 
 def uniqify_term(
@@ -68,20 +69,23 @@ def uniqify_term(
             pass
 
 
+# A sequential name generator made for name uniqueness
 def uniqify_program(
     program: Program,
 ) -> tuple[Callable[[str], str], Program]:
     fresh = SequentialNameGenerator()
 
-    _term = partial(uniqify_term, fresh=fresh)
+    _term = partial(uniqify_term, fresh=fresh)  # curried function(?) he says
 
-    match program:
+    match program:  # for each of the parameters make a new context where it is a fresh of that thing
         case Program(parameters=parameters, body=body):  # pragma: no branch
             local = {parameter: fresh(parameter) for parameter in parameters}
             return (
                 fresh,
                 Program(
-                    parameters=[local[parameter] for parameter in parameters],
+                    parameters=[
+                        local[parameter] for parameter in parameters
+                    ],  # renamed to renames Look up new name of param and use it instead
                     body=_term(body, local),
                 ),
             )
