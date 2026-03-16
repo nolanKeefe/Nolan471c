@@ -32,8 +32,8 @@ def constant_folding_term(
             folded_bindings = [(name, recur(val)) for name, val in bindings]
             return Let(bindings=folded_bindings, body=recur(body))
 
-        case Reference(name=_name):
-            # Nothing to fold already atomic
+        case Reference(name=name):
+            # Nothing to fold — a reference is already atomic
             return term
 
         case Abstract(parameters=parameters, body=body):
@@ -42,7 +42,7 @@ def constant_folding_term(
 
         case Apply(target=target, arguments=arguments):
             # Fold the function and each argument
-            return Apply(target=recur(target), arguments=[recur(arg) for arg in arguments])
+            return Apply(target=recur(target), arguments=[recur(a) for a in arguments])
 
         case Immediate():
             # Already a constant — nothing to do
@@ -52,21 +52,19 @@ def constant_folding_term(
             match operator:
                 case "+":
                     match recur(left), recur(right):
-                        # Both sides are immediates, evaluate
+                        # Both sides are known constants — evaluate now
                         case Immediate(value=i1), Immediate(value=i2):
                             return Immediate(value=i1 + i2)
 
-                        # left is 0 so its the right
+                        # 0 + x  =>  x
                         case Immediate(value=0), right:
                             return right
 
-                        # if the right is 0 we know its just the left
-                        # no reason to waste a pass on moving it to the left
+                        # x + 0  =>  x
                         case left, Immediate(value=0):
                             return left
 
                         # (+ (+ i1 a) (+ i2 b))  =>  (+ (i1+i2) (+ a b))
-                        # can take out the immediates basically
                         case [
                             Primitive(operator="+", left=Immediate(value=i1), right=left),
                             Primitive(operator="+", left=Immediate(value=i2), right=right),
@@ -78,25 +76,21 @@ def constant_folding_term(
                             )
 
                         # (+ (- i1 a) (- i2 b))  =>  (- (i1+i2) (+ a b))
-                        # when adding 2 subtraction cases you can just add the lefts
-                        # if they are immediates and then subtract the 2 addition things
                         case [
                             Primitive(operator="-", left=Immediate(value=i1), right=left),
                             Primitive(operator="-", left=Immediate(value=i2), right=right),
                         ]:
                             return Primitive(
-                                # flip the outside sign because now its pos vs negatives
                                 operator="-",
                                 left=Immediate(value=i1 + i2),
                                 right=Primitive(operator="+", left=left, right=right),
                             )
 
-                        # move the immediate to the left so later
+                        # Canonicalise: move an immediate to the left so later
                         # passes have a consistent shape to match against.
-                        case left, (Immediate() as right):
+                        case left, Immediate():
                             return Primitive(operator="+", left=right, right=left)
 
-                        # no changes return case
                         case left, right:
                             return Primitive(operator="+", left=left, right=right)
 
@@ -107,30 +101,27 @@ def constant_folding_term(
                             return Immediate(value=i1 - i2)
 
                         # x - 0  =>  x
-                        # can't have a 0 on the left due to Immediates definition
-                        # Have a case for it on the right though
                         case left, Immediate(value=0):
                             return left
 
-                        # x - x  =>  0  (same reference name so it'll be 0
+                        # x - x  =>  0  (same reference name)
                         case Reference(name=n1), Reference(name=n2) if n1 == n2:
                             return Immediate(value=0)
 
-                        # (- (- i1 a) (- i2 b))  =>
-                        # (i1 - a) - (i2 - b) = (i1 - i2) + (b - a) => i3 - b + a
+                        # (- (- i1 a) (- i2 b))  =>  (- (i1-i2) (- a b))  … wait, sign algebra:
+                        # (i1 - a) - (i2 - b) = (i1 - i2) + (b - a)
                         # Keep conservative: just pull constants out on the left.
                         case [
                             Primitive(operator="-", left=Immediate(value=i1), right=left),
                             Primitive(operator="-", left=Immediate(value=i2), right=right),
                         ]:
-                            return Primitive(  # becomes
+                            return Primitive(
                                 operator="-",
                                 left=Immediate(value=i1 - i2),
-                                right=Primitive(operator="+", left=left, right=right),
+                                right=Primitive(operator="-", left=left, right=right),
                             )
 
                         # (- (+ i1 a) (+ i2 b))  =>  (+ (i1-i2) (- a b))
-                        # algebra stuff bruh. its so simple and yet Im getting confused lol
                         case [
                             Primitive(operator="+", left=Immediate(value=i1), right=left),
                             Primitive(operator="+", left=Immediate(value=i2), right=right),
@@ -141,18 +132,18 @@ def constant_folding_term(
                                 right=Primitive(operator="-", left=left, right=right),
                             )
 
-                        # move a right-side immediate to the left
+                        # Canonicalise: move a right-side immediate to the left
                         # by negating, turning (- x k) => (+ (-k) x).
                         # This lets subsequent passes treat subtraction of a
                         # constant the same as addition of its negation.
-                        case left, (Immediate(value=k) as _):
+                        case left, Immediate(value=k):
                             return Primitive(
                                 operator="+",
                                 left=Immediate(value=-k),
                                 right=left,
                             )
 
-                        case left, right:  # no change case
+                        case left, right:
                             return Primitive(operator="-", left=left, right=right)
 
                 case "*":
@@ -161,26 +152,22 @@ def constant_folding_term(
                         case Immediate(value=i1), Immediate(value=i2):
                             return Immediate(value=i1 * i2)
 
-                        # 0 * x  =  0
-                        # doesn't matter what the right is
+                        # 0 * x  =>  0  (and x * 0 below)
                         case Immediate(value=0), _:
                             return Immediate(value=0)
 
-                        # x*0 = 0
-                        # doesn't matter what left is
                         case _, Immediate(value=0):
                             return Immediate(value=0)
 
-                        # 1 * x  =  x
+                        # 1 * x  =>  x
                         case Immediate(value=1), right:
                             return right
 
-                        # x * 1  =  x
+                        # x * 1  =>  x
                         case left, Immediate(value=1):
                             return left
 
                         # (*(* i1 a)(* i2 b))  =>  (* (i1*i2) (* a b))
-                        # move things over do the math
                         case [
                             Primitive(operator="*", left=Immediate(value=i1), right=left),
                             Primitive(operator="*", left=Immediate(value=i2), right=right),
@@ -191,24 +178,21 @@ def constant_folding_term(
                                 right=Primitive(operator="*", left=left, right=right),
                             )
 
-                        # immediate to the left
-                        case left, (Immediate() as right):
+                        # Canonicalise: immediate to the left
+                        case left, Immediate():
                             return Primitive(operator="*", left=right, right=left)
 
-                        # no chnage
                         case left, right:
                             return Primitive(operator="*", left=left, right=right)
 
         case Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
             folded_left = recur(left)
             folded_right = recur(right)
-            # If both sides of the condition are known, evaluate the branch
+            # If both sides of the condition are known, evaluate the branch now
             match folded_left, folded_right:
                 case Immediate(value=i1), Immediate(value=i2):
                     condition = (i1 < i2) if operator == "<" else (i1 == i2)
                     return recur(consequent) if condition else recur(otherwise)
-
-                # No change case
                 case _:
                     return Branch(
                         operator=operator,
@@ -218,10 +202,9 @@ def constant_folding_term(
                         otherwise=recur(otherwise),
                     )
 
-        case Allocate():  # No change
+        case Allocate():
             return term
 
-        # Just need to recur on their parts
         case Load(base=base, index=index):
             return Load(base=recur(base), index=index)
 
