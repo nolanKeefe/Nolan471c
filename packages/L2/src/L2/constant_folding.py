@@ -29,7 +29,7 @@ def constant_folding_term(
     match term:
         case Let(bindings=bindings, body=body):
             # Fold constants inside each binding's value, and in the body
-            folded_bindings = [(name, recur(val)) for name, val in bindings]
+            folded_bindings = tuple((name, recur(val)) for name, val in bindings)
             return Let(bindings=folded_bindings, body=recur(body))
 
         case Reference(name=name):
@@ -42,7 +42,7 @@ def constant_folding_term(
 
         case Apply(target=target, arguments=arguments):
             # Fold the function and each argument
-            return Apply(target=recur(target), arguments=[recur(a) for a in arguments])
+            return Apply(target=recur(target), arguments=tuple(recur(a) for a in arguments))
 
         case Immediate():
             # Already a constant — nothing to do
@@ -88,7 +88,7 @@ def constant_folding_term(
 
                         # Canonicalise: move an immediate to the left so later
                         # passes have a consistent shape to match against.
-                        case left, Immediate():
+                        case left, (Immediate() as right):
                             return Primitive(operator="+", left=right, right=left)
 
                         case left, right:
@@ -179,7 +179,7 @@ def constant_folding_term(
                             )
 
                         # Canonicalise: immediate to the left
-                        case left, Immediate():
+                        case left, (Immediate() as right):
                             return Primitive(operator="*", left=right, right=left)
 
                         case left, right:
@@ -212,4 +212,4 @@ def constant_folding_term(
             return Store(base=recur(base), index=index, value=recur(value))
 
         case Begin(effects=effects, value=value):
-            return Begin(effects=[recur(e) for e in effects], value=recur(value))
+            return Begin(effects=tuple(recur(e) for e in effects), value=recur(value))

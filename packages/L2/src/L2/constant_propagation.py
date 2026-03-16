@@ -31,7 +31,7 @@ type Env = Mapping[Identifier, int]
 
 
 def constant_propagation_term(term: Term, env: Env) -> Term:
-    # Return a new term with every known-constant reference substituted
+    """Return a new term with every known-constant reference substituted."""
     recur = partial(constant_propagation_term, env=env)
 
     match term:
@@ -52,7 +52,7 @@ def constant_propagation_term(term: Term, env: Env) -> Term:
                 if isinstance(propagated, Immediate):
                     new_env[name] = propagated.value
             return Let(
-                bindings=new_bindings,
+                bindings=tuple(new_bindings),
                 body=constant_propagation_term(body, new_env),
             )
 
@@ -67,7 +67,7 @@ def constant_propagation_term(term: Term, env: Env) -> Term:
         case Apply(target=target, arguments=arguments):
             return Apply(
                 target=recur(target),
-                arguments=[recur(a) for a in arguments],
+                arguments=tuple(recur(a) for a in arguments),
             )
 
         case Immediate():
@@ -95,7 +95,7 @@ def constant_propagation_term(term: Term, env: Env) -> Term:
             return Store(base=recur(base), index=index, value=recur(value))
 
         case Begin(effects=effects, value=value):
-            return Begin(effects=[recur(e) for e in effects], value=recur(value))
+            return Begin(effects=tuple(recur(e) for e in effects), value=recur(value))
 
-    # Should be unreachable if things go well above. Have as a failsafe
+    # Should be unreachable if all Term variants are handled above
     raise ValueError(f"Unhandled term variant: {term!r}")

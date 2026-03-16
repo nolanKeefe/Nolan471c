@@ -13,24 +13,34 @@ from .syntax import (
     Term,
 )
 
+"""
+Removes Branch nodes whose condition is statically decidable — i.e. both
+operands of the condition are known integer constants at compile time.
+
+"""
+
 
 def branch_elimination_term(term: Term) -> Term:
-    # Recursively eliminate static branches
+    # Recursively eliminate statically-decidable Branch nodes from term
     recur = branch_elimination_term
 
     match term:
         case Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
-            # recurse to check if they are just immediates on the inside
+            # Recurse into the condition operands first — a nested pass may
+            # have turned them into Immediates that we can now evaluate.
             left_r = recur(left)
             right_r = recur(right)
             match left_r, right_r:
                 case Immediate(value=i1), Immediate(value=i2):
-                    # both sides are immediates so we can do the comparison
+                    # Both sides of the condition are now known constants.
+                    # Evaluate the condition at compile time and return only
+                    # the branch arm that would have been taken — the other
+                    # arm is unreachable and is dropped entirely.
                     condition = (i1 < i2) if operator == "<" else (i1 == i2)
                     return recur(consequent if condition else otherwise)
-                    # get the result and then return the path it would take
                 case _:
-                    # Condition is not fully known keep the branch whole
+                    # Condition is not fully known — keep the Branch but still
+                    # recurse into both arms to clean up anything inside them.
                     return Branch(
                         operator=operator,
                         left=left_r,
@@ -39,10 +49,9 @@ def branch_elimination_term(term: Term) -> Term:
                         otherwise=recur(otherwise),
                     )
 
-        # This is all here for recurrence purposes and to fulfill the term return
         case Let(bindings=bindings, body=body):
             return Let(
-                bindings=[(name, recur(val)) for name, val in bindings],
+                bindings=tuple((name, recur(val)) for name, val in bindings),
                 body=recur(body),
             )
 
@@ -50,7 +59,7 @@ def branch_elimination_term(term: Term) -> Term:
             return Abstract(parameters=parameters, body=recur(body))
 
         case Apply(target=target, arguments=arguments):
-            return Apply(target=recur(target), arguments=[recur(a) for a in arguments])
+            return Apply(target=recur(target), arguments=tuple(recur(a) for a in arguments))
 
         case Primitive(operator=operator, left=left, right=right):
             return Primitive(operator=operator, left=recur(left), right=recur(right))
@@ -62,7 +71,7 @@ def branch_elimination_term(term: Term) -> Term:
             return Store(base=recur(base), index=index, value=recur(value))
 
         case Begin(effects=effects, value=value):
-            return Begin(effects=[recur(e) for e in effects], value=recur(value))
+            return Begin(effects=tuple(recur(e) for e in effects), value=recur(value))
 
         case Immediate() | Reference() | Allocate():
             return term

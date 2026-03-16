@@ -28,141 +28,178 @@ needs to be bottom up as discussed in class
 """
 
 
-def free_variables(term: Term) -> frozenset[Identifier]:
-    # Return the set of identifiers that occur free in a term
+# Helpers
 
+
+def free_variables(term: Term) -> frozenset[Identifier]:
+    """Return the set of variable names that are *used but not defined* in term.
+
+    A variable is "free" in a term if it is referenced inside that term but
+    not introduced (bound) by that same term.  This tells us which names a
+    term depends on from its surrounding context.
+    """
     match term:
         case Reference(name=name):
-            return frozenset({name})  # the name itself free
+            # A bare variable reference — the name itself is free.
+            return frozenset({name})
 
         case Let(bindings=bindings, body=body):
-            # Things are free if they are only in the lets bounds and not from an outer let
+            # A Let introduces new names, so we must be careful:
+            #   - Each binding's *value* can use names from outer scope or
+            #     from bindings that appear earlier in the same Let.
+            #   - The names introduced by the bindings are NOT free in the
+            #     Let as a whole — they are "consumed" internally.
+            #
+            # We walk the bindings left-to-right, tracking which names have
+            # been introduced so far in `bound`.
+            #
+            # Example:  let a = x        # free in value: {x}
+            #               b = a + y    # free in value: {a, y}, but a is bound -> {y}
+            #           in  b + z        # free in body:  {b, z}, but b is bound -> {z}
+            #
+            # Overall free variables: {x, y, z}
             bound: set[Identifier] = set()
-            fvs: set[Identifier] = set()  # free variables
-
+            fvs: set[Identifier] = set()
             for name, val in bindings:
+                # Collect free variables of this value, minus names already bound
                 fvs |= free_variables(val) - bound
-                bound.add(name)  # we are getting new names that aren't already bound
-
+                # Mark this name as bound for subsequent bindings and the body
+                bound.add(name)
+            # The body can use anything from outer scope except what Let binds
             fvs |= free_variables(body) - bound
             return frozenset(fvs)
 
         case Abstract(parameters=parameters, body=body):
-            # free variables in the body are the only thing we can get from the abstract
-            # the parameters are removed from the free variable set basically
+            # A lambda binds its parameters inside the body.
+            # Free variables of the lambda = free variables of the body
+            # minus the parameter names (they are provided by the caller).
+            #
+            # Example:  lambda (x, y): x + z
+            #   free in body: {x, y, z}  minus parameters {x, y}  ->  {z}
             return free_variables(body) - frozenset(parameters)
 
         case Apply(target=target, arguments=arguments):
-            # function calls collect free vars from function and from the args
+            # A function call: collect free variables from the function
+            # expression and from every argument.
             result: set[Identifier] = set(free_variables(target))
             for a in arguments:
                 result |= free_variables(a)
             return frozenset(result)
 
         case Immediate():
-            # Immediates don't have vars bro...
+            # A literal integer constant — no variables at all.
             return frozenset()
 
         case Primitive(left=left, right=right):
-            # arithmetic expression union of both left and right vars
-            # cuz like we got 2 ends to work from here
+            # An arithmetic expression — union of both operands' free variables.
             return free_variables(left) | free_variables(right)
 
         case Branch(left=left, right=right, consequent=consequent, otherwise=otherwise):
-            # need to look at union of all the paths n stuff
+            # A conditional — variables can appear in the condition operands
+            # and in either branch arm, so union all four.
             return free_variables(left) | free_variables(right) | free_variables(consequent) | free_variables(otherwise)
 
         case Allocate():
-            # fixed nothing to add
+            # Allocation takes a fixed count — no variable references.
             return frozenset()
 
         case Load(base=base):
-            # loading address can have variable
+            # The address to load from may contain variable references.
             return free_variables(base)
 
         case Store(base=base, value=value):
-            # address and the value can be vars
+            # Both the address and the value being stored may reference variables.
+            # (index is a compile-time Nat literal, not a variable)
             return free_variables(base) | free_variables(value)
 
         case Begin(effects=effects, value=value):
-            # need to look at all the effects is the main thing here
+            # A sequence of effects followed by a final value.
+            # Variables can appear in any effect or in the final value.
             result = set(free_variables(value))
             for e in effects:
                 result |= free_variables(e)
             return frozenset(result)
 
-    # shouldnt hit but like the in case
     raise ValueError(f"Unhandled term variant: {term!r}")
 
 
 def is_pure(term: Term) -> bool:
-    """Return True iff evaluating the term produces no observable side-effects.
-
-    we're saying a term is pure only if it provably cannot perform
-    allocation, memory reads/writes, or other effectful operations.
-    tryna not mess things up
-    """
     match term:
         case Immediate() | Reference():
+            # Literals and variable reads have no side-effects.
             return True
+
         case Primitive(left=left, right=right):
+            # Arithmetic is pure only if both operands are pure.
+            # (No division — so no division-by-zero side-effect to worry about.)
             return is_pure(left) and is_pure(right)
+
         case Abstract():
-            # Forming a closure is pure
-            # calling it might not be, but we aren't evaluating the body here.
+            # Building a closure captures variables but does not execute the
+            # body — so the act of forming the closure is itself pure.
             return True
+
         case Let(bindings=bindings, body=body):
-            # need to check em all for "pureness"
+            # A Let is pure only if every bound value is pure AND the body is
+            # pure.  If any binding is impure we must keep the whole thing.
             return all(is_pure(v) for _, v in bindings) and is_pure(body)
 
         case Apply() | Allocate() | Load() | Store() | Begin() | Branch():
-            # BLATANTLY doing memory shit so false
+            # All of these can have side-effects — treat as impure.
             return False
+
         case _:
-            # other cases we don't know so false
+            # Unknown variant — be conservative and say "not pure" so we
+            # never accidentally drop something important.
             return False
 
 
-# Main pass
+# main
 
 
 def dead_code_elimination_term(term: Term) -> Term:
-    # Recursively eliminate dead Let-bindings from terms
+    """Recursively eliminate dead Let-bindings from *term*.
+
+    The only term kind where elimination actually happens is Let — all other
+    term kinds just recurse into their sub-terms to clean up anything nested
+    inside them.
+    """
     match term:
         case Let(bindings=bindings, body=body):
-            # Recurse into every sub-term first (bottom-up)
+            # Step 1: recurse bottom-up
             reduced_body = dead_code_elimination_term(body)
-            reduced_bindings = [(name, dead_code_elimination_term(val)) for name, val in bindings]
+            reduced_bindings = tuple((name, dead_code_elimination_term(val)) for name, val in bindings)
 
-            # Filtering keeps a binding if it is used OR has side-effects.
-            # We recompute free variables after each removal so that removing
-            # one binding can expose another as dead
+            # Step 2: decide which bindings are live
+
             live_bindings: list[tuple[Identifier, Term]] = []
-            # Work right-to-left so we can incrementally track what is live
-            # Start with the free variables of the body
+
+            # Seed `live` with names that are actually needed by the body.
             live: frozenset[Identifier] = free_variables(reduced_body)
 
             for name, val in reversed(reduced_bindings):
                 if name in live or not is_pure(val):
                     live_bindings.insert(0, (name, val))
-                    # This binding's value's free variables are now needed too
                     live = live | free_variables(val)
-                # else: name is dead and value is pure — drop it entirely
 
+            # Step 3: reassemble
             if not live_bindings:
                 return reduced_body
-            return Let(bindings=live_bindings, body=reduced_body)
+            return Let(bindings=tuple(live_bindings), body=reduced_body)
 
         case Abstract(parameters=parameters, body=body):
+            # Recurse into the lambda body — dead bindings can hide inside lambdas.
             return Abstract(parameters=parameters, body=dead_code_elimination_term(body))
 
         case Apply(target=target, arguments=arguments):
+            # Recurse into the function and each argument.
             return Apply(
                 target=dead_code_elimination_term(target),
-                arguments=[dead_code_elimination_term(a) for a in arguments],
+                arguments=tuple(dead_code_elimination_term(a) for a in arguments),
             )
 
         case Primitive(operator=operator, left=left, right=right):
+            # Recurse into both operands.
             return Primitive(
                 operator=operator,
                 left=dead_code_elimination_term(left),
@@ -170,6 +207,7 @@ def dead_code_elimination_term(term: Term) -> Term:
             )
 
         case Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
+            # Recurse into the condition operands and both arms.
             return Branch(
                 operator=operator,
                 left=dead_code_elimination_term(left),
@@ -189,14 +227,16 @@ def dead_code_elimination_term(term: Term) -> Term:
             )
 
         case Begin(effects=effects, value=value):
-            # Keep all effects
-            # recurse to clean up inside them.
+            # Every effect in a Begin is intentionally side-effectful, so we
+            # never drop them — but we still recurse inside each one in case
+            # there are dead Let-bindings nested within an effect expression.
             return Begin(
-                effects=[dead_code_elimination_term(e) for e in effects],
+                effects=tuple(dead_code_elimination_term(e) for e in effects),
                 value=dead_code_elimination_term(value),
             )
 
         case Immediate() | Reference() | Allocate():
+            # Atomic terms — nothing to eliminate, return as-is.
             return term
 
-    raise ValueError(f"Unhandled term variant: {term!r}")  # shouldn't reach but coverage
+    raise ValueError(f"Unhandled term variant: {term!r}")
