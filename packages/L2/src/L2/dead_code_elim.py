@@ -238,5 +238,3 @@ def dead_code_elimination_term(term: Term) -> Term:
         case Immediate() | Reference() | Allocate():
             # Atomic terms — nothing to eliminate, return as-is.
             return term
-
-    raise ValueError(f"Unhandled term variant: {term!r}")

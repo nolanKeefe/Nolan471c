@@ -75,5 +75,3 @@ def branch_elimination_term(term: Term) -> Term:
 
         case Immediate() | Reference() | Allocate():
             return term
-
-    raise ValueError(f"Unhandled term variant: {term!r}")

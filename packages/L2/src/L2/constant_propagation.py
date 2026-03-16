@@ -96,6 +96,3 @@ def constant_propagation_term(term: Term, env: Env) -> Term:
 
         case Begin(effects=effects, value=value):
             return Begin(effects=tuple(recur(e) for e in effects), value=recur(value))
-
-    # Should be unreachable if all Term variants are handled above
-    raise ValueError(f"Unhandled term variant: {term!r}")

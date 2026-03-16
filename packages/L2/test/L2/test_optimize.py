@@ -513,6 +513,18 @@ class TestConstantPropagation:
         term = Primitive(operator="+", left=Reference(name="a"), right=Reference(name="b"))
         assert constant_propagation_term(term, env={}) == term
 
+    def test_allocate(self):
+        term = Allocate(count=1)
+        assert constant_propagation_term(term, env={}) == term
+
+    def test_load(self):
+        term = Load(base=Immediate(value=1), index=1)
+        assert constant_propagation_term(term, env={}) == term
+
+    def test_store(self):
+        term = Store(base=Immediate(value=1), index=1, value=Immediate(value=1))
+        assert constant_propagation_term(term, env={}) == term
+
 
 # ===========================================================================
 # 3. Dead Code Elimination — free_variables helper
@@ -858,6 +870,9 @@ class TestBranchElimination:
 
     def test_passthrough_allocate(self):
         assert branch_elimination_term(Allocate(count=2)) == Allocate(count=2)
+
+    def test_passthrough_Load(self):
+        assert branch_elimination_term(Load(base=Immediate(value=1), index=3)) == Load(base=Immediate(value=1), index=3)
 
 
 # ===========================================================================
