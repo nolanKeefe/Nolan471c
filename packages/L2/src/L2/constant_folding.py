@@ -32,7 +32,7 @@ def constant_folding_term(
             folded_bindings = tuple((name, recur(val)) for name, val in bindings)
             return Let(bindings=folded_bindings, body=recur(body))
 
-        case Reference(name=name):
+        case Reference(name=_name):
             # Nothing to fold — a reference is already atomic
             return term
 
