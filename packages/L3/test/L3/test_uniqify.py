@@ -1,4 +1,4 @@
-from L3.syntax import Apply, Immediate, Let, Reference
+from L3.syntax import Abstract, Allocate, Apply, Begin, Immediate, Let, LetRec, Load, Reference, Store
 from L3.uniqify import Context, uniqify_term
 from util.sequential_name_generator import SequentialNameGenerator
 
@@ -56,6 +56,122 @@ def test_uniqify_term_let():
                 Reference(name="y0"),
             ],
         ),
+    )
+
+    assert actual == expected
+
+
+def test_uniqify_letrec():
+    term = LetRec(
+        bindings=[
+            ("x", Abstract(parameters=["n"], body=Reference(name="y"))),
+            ("y", Abstract(parameters=["n"], body=Reference(name="x"))),
+        ],
+        body=Reference(name="x"),
+    )
+
+    context: Context = {}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+
+    expected = LetRec(
+        bindings=[
+            # "x" freshened to "x0", its body sees "y" -> "y0"
+            ("x0", Abstract(parameters=["n0"], body=Reference(name="y0"))),
+            # "y" freshened to "y0", its body sees "x" -> "x0"
+            ("y0", Abstract(parameters=["n1"], body=Reference(name="x0"))),
+        ],
+        # body sees "x" -> "x0"
+        body=Reference(name="x0"),
+    )
+
+    assert actual == expected
+
+
+def test_uniqify_abstract():
+    term = Abstract(
+        parameters=["x", "y"],
+        # body refers to one of the parameters
+        body=Reference(name="x"),
+    )
+
+    context: Context = {}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+
+    expected = Abstract(
+        # both parameters freshened
+        parameters=["x0", "y0"],
+        # body sees "x" -> "x0"
+        body=Reference(name="x0"),
+    )
+
+    assert actual == expected
+
+
+def test_uniqify_Allocate():
+    term = Allocate(count=42)
+
+    context: Context = dict[str, str]()
+    fresh = SequentialNameGenerator()
+    actual = uniqify_term(term, context, fresh)
+
+    expected = Allocate(count=42)
+
+    assert actual == expected
+
+
+def test_uniqify_Load():
+    term = Load(base=Reference(name="x"), index=0)
+
+    context: Context = {"x": "x0"}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+    expected = Load(base=Reference(name="x0"), index=0)
+
+    assert actual == expected
+
+
+def test_uniqify_Store():
+    term = Store(base=Reference(name="x"), index=0, value=Reference(name="y"))
+
+    context: Context = {"x": "x0", "y": "y0"}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+    expected = Store(base=Reference(name="x0"), index=0, value=Reference(name="y0"))
+
+    assert actual == expected
+
+
+def test_uniqify_begin():
+    term = Begin(
+        effects=[
+            Store(
+                base=Reference(name="x"),
+                index=0,
+                value=Reference(name="y"),
+            ),
+        ],
+        value=Reference(name="x"),
+    )
+    context: Context = {"x": "x0", "y": "y0"}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+
+    expected = Begin(
+        effects=[
+            Store(
+                base=Reference(name="x0"),  # renamed via context
+                index=0,  # plain integer, unchanged
+                value=Reference(name="y0"),  # renamed via context
+            ),
+        ],
+        value=Reference(name="x0"),  # renamed via context
     )
 
     assert actual == expected
