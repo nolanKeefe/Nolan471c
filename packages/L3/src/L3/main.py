@@ -1,8 +1,8 @@
 from pathlib import Path
 
 import click
-from L1.to_python import to_ast_program
-from L2.cps_convert import cps_convert_program
+
+# from L2.cps_convert import cps_convert_program
 from L2.optimize import optimize_program
 
 from .check import check_program
@@ -58,8 +58,8 @@ def main(
     if optimize:
         l2 = optimize_program(l2)
 
-    l1 = cps_convert_program(l2, fresh)
+    # l1 = cps_convert_program(l2, fresh)
 
-    module = to_ast_program(l1)
+    # module = to_ast_program(l1)
 
-    (output or input.with_suffix(".py")).write_text(module)
+    # (output or input.with_suffix(".py")).write_text(module)
