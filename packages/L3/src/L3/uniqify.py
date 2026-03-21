@@ -33,19 +33,20 @@ def uniqify_term(
 
     match term:
         case Let(bindings=bindings, body=body):
-            # holds renamed bindings
-            new_bindings: list[tuple[Identifier, Term]] = []
-            # grows as we process bindings
             local = dict(context)
+            new_bindings: list[tuple[Identifier, Term]] = []
+
             for name, val in bindings:
-                # makes the fresh unique name for the binding
+                # Process RHS first, using context BEFORE this name is added.
+                # So Reference("x") still looks up the OUTER "x" -> "y"
+                new_val = uniqify_term(val, context, fresh)
+                # Only AFTER processing RHS do we freshen this name
+                # and add it to context for subsequent bindings and body
                 fresh_name = fresh(name)
-                # Add mapping to local context so later bindings can use it
                 local[name] = fresh_name
-                # Process current context before new name
-                new_val = uniqify_term(val, local, fresh)
-                # record renamed bindings
+
                 new_bindings.append((fresh_name, new_val))
+
             return Let(
                 bindings=new_bindings,
                 body=uniqify_term(body, local, fresh),
