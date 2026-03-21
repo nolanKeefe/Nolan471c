@@ -38,12 +38,12 @@ def uniqify_term(
             # grows as we process bindings
             local = dict(context)
             for name, val in bindings:
-                # Process current context before new name
-                new_val = uniqify_term(val, local, fresh)
                 # makes the fresh unique name for the binding
                 fresh_name = fresh(name)
                 # Add mapping to local context so later bindings can use it
                 local[name] = fresh_name
+                # Process current context before new name
+                new_val = uniqify_term(val, local, fresh)
                 # record renamed bindings
                 new_bindings.append((fresh_name, new_val))
             return Let(
