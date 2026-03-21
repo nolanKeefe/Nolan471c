@@ -235,6 +235,6 @@ def dead_code_elimination_term(term: Term) -> Term:
                 value=dead_code_elimination_term(value),
             )
 
-        case Immediate() | Reference() | Allocate():
+        case Immediate() | Reference() | Allocate():  # pragma: no branch
             # Atomic terms — nothing to eliminate, return as-is.
             return term

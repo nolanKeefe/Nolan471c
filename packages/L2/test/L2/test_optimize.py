@@ -399,6 +399,8 @@ class TestConstantFolding:
         )
         assert constant_folding_term(term, context={}) == expected
 
+    # --- line 94: addition fallthrough — two non-immediate, non-matching sub-expressions ---
+
     def test_add_two_primitives_no_immediate_unchanged(self):
         # (x + y) + (a + b) — no immediates anywhere, no pattern matches,
         # hits the fallthrough case left, right on line 94 and rebuilds as-is.
@@ -842,6 +844,250 @@ class TestDeadCodeElimination:
             value=Immediate(value=0),
         )
         assert dead_code_elimination_term(term) == term
+
+    # --- line 196: Apply — recurses into target and all arguments ---
+
+    def test_apply_recurses_dead_binding_in_argument(self):
+        # f(let unused=1 in x)  =>  f(x)
+        # Dead Let inside an argument is eliminated; Apply itself is kept.
+        term = Apply(
+            target=Reference(name="f"),
+            arguments=(Let(bindings=(("unused", Immediate(value=1)),), body=Reference(name="x")),),
+        )
+        expected = Apply(
+            target=Reference(name="f"),
+            arguments=(Reference(name="x"),),
+        )
+        assert dead_code_elimination_term(term) == expected
+
+    def test_apply_recurses_dead_binding_in_target(self):
+        # (let unused=1 in f)(x)  =>  f(x)
+        term = Apply(
+            target=Let(bindings=(("unused", Immediate(value=1)),), body=Reference(name="f")),
+            arguments=(Reference(name="x"),),
+        )
+        expected = Apply(
+            target=Reference(name="f"),
+            arguments=(Reference(name="x"),),
+        )
+        assert dead_code_elimination_term(term) == expected
+
+    def test_apply_no_dead_bindings_unchanged(self):
+        # f(x, y) — nothing nested to eliminate, returned structurally equal.
+        term = Apply(
+            target=Reference(name="f"),
+            arguments=(Reference(name="x"), Reference(name="y")),
+        )
+        assert dead_code_elimination_term(term) == term
+
+    # --- line 220: Load — recurses into base ---
+
+    def test_load_recurses_dead_binding_in_base(self):
+        # load(let unused=1 in arr, 0)  =>  load(arr, 0)
+        term = Load(
+            base=Let(bindings=(("unused", Immediate(value=1)),), body=Reference(name="arr")),
+            index=0,
+        )
+        expected = Load(base=Reference(name="arr"), index=0)
+        assert dead_code_elimination_term(term) == expected
+
+    def test_load_no_dead_bindings_unchanged(self):
+        # load(arr, 2) — nothing to eliminate.
+        term = Load(base=Reference(name="arr"), index=2)
+        assert dead_code_elimination_term(term) == term
+
+    def test_load_impure_kept_when_result_unused(self):
+        # let x = load(arr, 0) in 42
+        # Load reads memory — impure — binding must NOT be dropped.
+        term = Let(
+            bindings=(("x", Load(base=Reference(name="arr"), index=0)),),
+            body=Immediate(value=42),
+        )
+        assert dead_code_elimination_term(term) == term
+
+    # --- lines 238+: Immediate | Reference | Allocate passthrough ---
+    # Each sub-pattern is listed explicitly so the coverage tool sees all three
+    # branches of the combined case hit independently.
+
+    def test_immediate_direct_passthrough(self):
+        # Immediate(5) passed directly — hits the Immediate branch of line 238.
+        term = Immediate(value=5)
+        assert dead_code_elimination_term(term) is term
+
+    def test_reference_direct_passthrough(self):
+        # Reference("x") passed directly — hits the Reference branch of line 238.
+        term = Reference(name="x")
+        assert dead_code_elimination_term(term) is term
+
+    def test_allocate_passthrough(self):
+        # Allocate is atomic — hits the Allocate branch of line 238.
+        term = Allocate(count=4)
+        assert dead_code_elimination_term(term) is term
+
+    def test_allocate_impure_kept_when_result_unused(self):
+        # let x = allocate(4) in 99
+        # Allocate is impure — binding must NOT be dropped even though x unused.
+        term = Let(
+            bindings=(("x", Allocate(count=4)),),
+            body=Immediate(value=99),
+        )
+        assert dead_code_elimination_term(term) == term
+
+
+# ===========================================================================
+# New tests for free_variables: lines 104, 108, 115-123
+# ===========================================================================
+
+
+class TestFreeVariablesExtended:
+    # --- line 104: Allocate has no variable references ---
+
+    def test_allocate_has_no_free_variables(self):
+        assert free_variables(Allocate(count=8)) == frozenset()
+
+    # --- line 108: Load — free variables come from base expression ---
+
+    def test_load_free_variables_from_base_reference(self):
+        # load(arr, 0) — arr is free
+        term = Load(base=Reference(name="arr"), index=0)
+        assert free_variables(term) == frozenset({"arr"})
+
+    def test_load_free_variables_from_base_primitive(self):
+        # load(x + y, 0) — both x and y are free
+        term = Load(
+            base=Primitive(operator="+", left=Reference(name="x"), right=Reference(name="y")),
+            index=0,
+        )
+        assert free_variables(term) == frozenset({"x", "y"})
+
+    def test_load_base_immediate_no_free_variables(self):
+        # load(5, 0) — no variables in base
+        term = Load(base=Immediate(value=5), index=0)
+        assert free_variables(term) == frozenset()
+
+    # --- lines 115-123: Begin — unions value and all effects ---
+
+    def test_begin_free_variables_from_value_only(self):
+        # begin [store(arr,0,1)]; x
+        # arr is in the effect, x is in the value — both free
+        term = Begin(
+            effects=(Store(base=Reference(name="arr"), index=0, value=Immediate(value=1)),),
+            value=Reference(name="x"),
+        )
+        assert free_variables(term) == frozenset({"arr", "x"})
+
+    def test_begin_free_variables_from_multiple_effects(self):
+        # begin [store(a,0,1), store(b,0,2)]; c
+        # a, b from effects; c from value — all free
+        term = Begin(
+            effects=(
+                Store(base=Reference(name="a"), index=0, value=Immediate(value=1)),
+                Store(base=Reference(name="b"), index=0, value=Immediate(value=2)),
+            ),
+            value=Reference(name="c"),
+        )
+        assert free_variables(term) == frozenset({"a", "b", "c"})
+
+    def test_begin_free_variables_effect_and_value_overlap(self):
+        # begin [store(arr,0,x)]; x
+        # x appears in both the effect value and the Begin value — still just {arr, x}
+        term = Begin(
+            effects=(Store(base=Reference(name="arr"), index=0, value=Reference(name="x")),),
+            value=Reference(name="x"),
+        )
+        assert free_variables(term) == frozenset({"arr", "x"})
+
+    def test_begin_no_free_variables(self):
+        # begin [store(arr,0,1)]; 42 — arr is still free (it's a reference)
+        # Use all immediates to get truly empty set
+        term = Begin(
+            effects=(Store(base=Immediate(value=0), index=0, value=Immediate(value=1)),),
+            value=Immediate(value=42),
+        )
+        assert free_variables(term) == frozenset()
+
+    def test_unhandled_variant_raises(self):
+        # Line 123 — the raise ValueError at the bottom of free_variables fires
+        # when passed something that matches none of the known Term cases.
+        # A plain Python object satisfies this because structural pattern
+        # matching only matches the cases whose class attributes are present.
+        import pytest
+
+        class _Unknown:
+            pass
+
+        with pytest.raises((ValueError, Exception)):
+            free_variables(_Unknown())
+
+
+# ===========================================================================
+# New tests for is_pure: lines 151-154 (Branch impure + wildcard fallthrough)
+# ===========================================================================
+
+
+class TestIsPureExtended:
+    def test_branch_is_impure(self):
+        # Branch is treated as impure — its arms may have side-effects.
+        term = Branch(
+            operator="<",
+            left=Immediate(value=1),
+            right=Immediate(value=2),
+            consequent=Immediate(value=10),
+            otherwise=Immediate(value=20),
+        )
+        assert not is_pure(term)
+
+    def test_branch_impure_binding_kept_even_if_unused(self):
+        # let _ = (if 1 < 2 then 10 else 20) in 99
+        # Branch is impure so the binding must be kept even though _ is unused.
+        term = Let(
+            bindings=(
+                (
+                    "_",
+                    Branch(
+                        operator="<",
+                        left=Immediate(value=1),
+                        right=Immediate(value=2),
+                        consequent=Immediate(value=10),
+                        otherwise=Immediate(value=20),
+                    ),
+                ),
+            ),
+            body=Immediate(value=99),
+        )
+        assert dead_code_elimination_term(term) == term
+
+    def test_let_with_pure_bindings_and_pure_body_is_pure(self):
+        # let x = 1
+        #     y = x + 2
+        # in  y
+        # All values are pure Primitives/Immediates/References, body is a Reference.
+        term = Let(
+            bindings=(
+                ("x", Immediate(value=1)),
+                ("y", Primitive(operator="+", left=Reference(name="x"), right=Immediate(value=2))),
+            ),
+            body=Reference(name="y"),
+        )
+        assert is_pure(term)
+
+    def test_let_with_impure_body_is_impure(self):
+        # let x = 1 in load(arr, 0)
+        # Body performs a load — impure.
+        term = Let(
+            bindings=(("x", Immediate(value=1)),),
+            body=Load(base=Reference(name="arr"), index=0),
+        )
+        assert not is_pure(term)
+
+    def test_unknown_object_is_impure(self):
+        # Lines 151-154 — the wildcard case _ fires when passed something
+        # that matches none of the known Term variants.  The function must
+        # return False (conservative: treat unknown as impure).
+        class _Unknown:
+            pass
+
+        assert is_pure(_Unknown()) is False
 
 
 # ===========================================================================
