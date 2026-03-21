@@ -33,40 +33,85 @@ def uniqify_term(
 
     match term:
         case Let(bindings=bindings, body=body):
-            pass
+            # holds renamed bindings
+            new_bindings: list[tuple[Identifier, Term]] = []
+            # grows as we process bindings
+            local = dict(context)
+            for name, val in bindings:
+                # Process current context before new name
+                new_val = uniqify_term(val, local, fresh)
+                # makes the fresh unique name for the binding
+                fresh_name = fresh(name)
+                # Add mapping to local context so later bindings can use it
+                local[name] = fresh_name
+                # record renamed bindings
+                new_bindings.append((fresh_name, new_val))
+            return Let(
+                bindings=new_bindings,
+                body=uniqify_term(body, local, fresh),
+            )
 
         case LetRec(bindings=bindings, body=body):
-            pass
+            # need to freshen all names first and then process things
+            local = dict(context)
+            for name, _ in bindings:
+                local[name] = fresh(name)
+            new_bindings = [(local[name], uniqify_term(val, local, fresh)) for name, val in bindings]
+            return LetRec(bindings=new_bindings, body=uniqify_term(body, local, fresh))
 
         case Reference(name=name):
-            pass
+            # need to look at name in context to get replacement
+            return Reference(name=context[name])
 
         case Abstract(parameters=parameters, body=body):
-            pass
+            local = dict(context)
+            fresh_params: list[Identifier] = []
+            for param in parameters:
+                fresh_param = fresh(param)
+                local[param] = fresh_param
+                fresh_params.append(fresh_param)
+            return Abstract(
+                parameters=fresh_params,
+                body=uniqify_term(body, local, fresh),
+            )
 
         case Apply(target=target, arguments=arguments):
-            pass
+            # need to recurse into parts
+            return Apply(target=_term(target), arguments=[_term(arg) for arg in arguments])
 
         case Immediate():
-            pass
+            # no name return
+            return term
 
         case Primitive(operator=operator, left=left, right=right):
-            pass
+            # need to recurse into each part
+            return Primitive(operator=operator, left=_term(left), right=_term(right))
 
         case Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
-            pass
+            # need to recurse into the branch parts
+            return Branch(
+                operator=operator,
+                left=_term(left),
+                right=_term(right),
+                consequent=_term(consequent),
+                otherwise=_term(otherwise),
+            )
 
         case Allocate():
-            pass
+            # no name return
+            return term
 
         case Load(base=base, index=index):
-            pass
+            # need to recur into base but index is just a flat num so its good
+            return Load(base=_term(base), index=index)
 
         case Store(base=base, index=index, value=value):
-            pass
+            # same as above just with value now which is able to be a variable
+            return Store(base=_term(base), index=index, value=_term(value))
 
         case Begin(effects=effects, value=value):  # pragma: no branch
-            pass
+            # recursively uniqify each effect is the only special part
+            return Begin(effects=[_term(effect) for effect in effects], value=_term(value))
 
 
 # A sequential name generator made for name uniqueness
