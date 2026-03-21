@@ -9,10 +9,11 @@ from L3.syntax import (
     LetRec,
     Load,
     Primitive,
+    Program,
     Reference,
     Store,
 )
-from L3.uniqify import Context, uniqify_term
+from L3.uniqify import Context, uniqify_program, uniqify_term
 from util.sequential_name_generator import SequentialNameGenerator
 
 
@@ -231,6 +232,30 @@ def test_uniqify_branch():
         right=Reference(name="y0"),  # renamed via context
         consequent=Reference(name="x0"),  # renamed via context
         otherwise=Reference(name="y0"),  # renamed via context
+    )
+
+    assert actual == expected
+
+
+def test_uniqify_program():
+    program = Program(  # make the program
+        parameters=["x", "y"],
+        body=Primitive(
+            operator="+",
+            left=Reference(name="x"),
+            right=Reference(name="y"),
+        ),
+    )
+
+    fresh, actual = uniqify_program(program)  # run uniqify program and freshen it
+
+    expected = Program(  # check
+        parameters=["x0", "y0"],
+        body=Primitive(
+            operator="+",
+            left=Reference(name="x0"),  # renamed via local
+            right=Reference(name="y0"),  # renamed via local
+        ),
     )
 
     assert actual == expected
