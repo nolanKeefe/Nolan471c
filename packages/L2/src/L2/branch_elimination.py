@@ -73,5 +73,5 @@ def branch_elimination_term(term: Term) -> Term:
         case Begin(effects=effects, value=value):
             return Begin(effects=tuple(recur(e) for e in effects), value=recur(value))
 
-        case Immediate() | Reference() | Allocate():
+        case Immediate() | Reference() | Allocate():  # pragma: no branch
             return term

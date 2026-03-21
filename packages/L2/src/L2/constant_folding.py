@@ -45,7 +45,7 @@ def constant_folding_term(
             return Apply(target=recur(target), arguments=tuple(recur(a) for a in arguments))
 
         case Immediate():
-            # Already a constant — nothing to do
+            # Already a constant — nothing to d
             return term
 
         case Primitive(operator=operator, left=left, right=right):
@@ -91,7 +91,7 @@ def constant_folding_term(
                         case left, (Immediate() as right):
                             return Primitive(operator="+", left=right, right=left)
 
-                        case left, right:
+                        case left, right:  # pragma: no branch
                             return Primitive(operator="+", left=left, right=right)
 
                 case "-":
@@ -143,7 +143,7 @@ def constant_folding_term(
                                 right=left,
                             )
 
-                        case left, right:
+                        case left, right:  # pragma: no branch
                             return Primitive(operator="-", left=left, right=right)
 
                 case "*":

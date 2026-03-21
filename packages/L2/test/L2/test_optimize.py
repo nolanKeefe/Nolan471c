@@ -399,6 +399,119 @@ class TestConstantFolding:
         )
         assert constant_folding_term(term, context={}) == expected
 
+    def test_add_two_primitives_no_immediate_unchanged(self):
+        # (x + y) + (a + b) — no immediates anywhere, no pattern matches,
+        # hits the fallthrough case left, right on line 94 and rebuilds as-is.
+        term = Primitive(
+            operator="+",
+            left=Primitive(operator="+", left=Reference(name="x"), right=Reference(name="y")),
+            right=Primitive(operator="+", left=Reference(name="a"), right=Reference(name="b")),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    def test_add_primitive_left_ref_right_unchanged(self):
+        # (x + y) + z — left is a non-immediate Primitive, right is a Reference.
+        # Neither the zero-identity, canonicalise, nor nested-constant rules fire.
+        term = Primitive(
+            operator="+",
+            left=Primitive(operator="+", left=Reference(name="x"), right=Reference(name="y")),
+            right=Reference(name="z"),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    # --- line 146: subtraction fallthrough — two non-immediate, non-matching sub-expressions ---
+
+    def test_sub_two_primitives_no_immediate_unchanged(self):
+        # (x + y) - (a + b) — the nested-constant rules need Immediates on the
+        # left of each sub-Primitive; without them the fallthrough on line 146
+        # rebuilds unchanged.
+        term = Primitive(
+            operator="-",
+            left=Primitive(operator="+", left=Reference(name="x"), right=Reference(name="y")),
+            right=Primitive(operator="+", left=Reference(name="a"), right=Reference(name="b")),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    def test_sub_ref_left_primitive_right_unchanged(self):
+        # x - (y + z) — right is a non-immediate Primitive so the canonicalise
+        # rule (which requires right to be Immediate) does not fire either.
+        term = Primitive(
+            operator="-",
+            left=Reference(name="x"),
+            right=Primitive(operator="+", left=Reference(name="y"), right=Reference(name="z")),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    # --- lines 149 / 185: multiplication — two non-immediate, non-matching sub-expressions ---
+
+    def test_mul_two_refs_unchanged(self):
+        # x * y — no immediates, no nested Primitives with Immediates,
+        # hits the fallthrough on line 185 and rebuilds unchanged.
+        term = Primitive(
+            operator="*",
+            left=Reference(name="x"),
+            right=Reference(name="y"),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    def test_mul_two_primitives_no_immediate_unchanged(self):
+        # (x + y) * (a + b) — nested Primitives but no Immediates on their
+        # left sides, so the constant-merging rule does not fire.
+        term = Primitive(
+            operator="*",
+            left=Primitive(operator="+", left=Reference(name="x"), right=Reference(name="y")),
+            right=Primitive(operator="+", left=Reference(name="a"), right=Reference(name="b")),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    def test_mul_ref_left_primitive_right_unchanged(self):
+        # x * (y + z) — right is a non-immediate Primitive so neither the
+        # identity rules nor the canonicalise rule (Immediate on right) fires.
+        term = Primitive(
+            operator="*",
+            left=Reference(name="x"),
+            right=Primitive(operator="+", left=Reference(name="y"), right=Reference(name="z")),
+        )
+        assert constant_folding_term(term, context={}) == term
+
+    # --- line 214: Begin — recurses into multiple effects and the value ---
+
+    def test_begin_folds_multiple_effects(self):
+        # begin [store(arr,0,1+1), store(arr,1,2+2)]; 3+3
+        # =>  begin [store(arr,0,2), store(arr,1,4)]; 6
+        term = Begin(
+            effects=(
+                Store(
+                    base=Reference(name="arr"),
+                    index=0,
+                    value=Primitive(operator="+", left=Immediate(value=1), right=Immediate(value=1)),
+                ),
+                Store(
+                    base=Reference(name="arr"),
+                    index=1,
+                    value=Primitive(operator="+", left=Immediate(value=2), right=Immediate(value=2)),
+                ),
+            ),
+            value=Primitive(operator="+", left=Immediate(value=3), right=Immediate(value=3)),
+        )
+        expected = Begin(
+            effects=(
+                Store(base=Reference(name="arr"), index=0, value=Immediate(value=2)),
+                Store(base=Reference(name="arr"), index=1, value=Immediate(value=4)),
+            ),
+            value=Immediate(value=6),
+        )
+        assert constant_folding_term(term, context={}) == expected
+
+    def test_begin_no_constants_unchanged(self):
+        # begin [store(arr, 0, x)]; y — nothing to fold anywhere,
+        # recurse fires but returns everything unchanged.
+        term = Begin(
+            effects=(Store(base=Reference(name="arr"), index=0, value=Reference(name="x")),),
+            value=Reference(name="y"),
+        )
+        assert constant_folding_term(term, context={}) == term
+
 
 # ===========================================================================
 # 2. Constant Propagation
@@ -873,6 +986,177 @@ class TestBranchElimination:
 
     def test_passthrough_Load(self):
         assert branch_elimination_term(Load(base=Immediate(value=1), index=3)) == Load(base=Immediate(value=1), index=3)
+
+    def test_recurses_into_otherwise_arm(self):
+        # Outer condition unknown; inner known branch is in the otherwise arm.
+        # if x < y then 30 else (if 1 < 2 then 10 else 20)  =>  if x < y then 30 else 10
+        term = Branch(
+            operator="<",
+            left=Reference(name="x"),
+            right=Reference(name="y"),
+            consequent=Immediate(value=30),
+            otherwise=Branch(
+                operator="<",
+                left=Immediate(value=1),
+                right=Immediate(value=2),
+                consequent=Immediate(value=10),
+                otherwise=Immediate(value=20),
+            ),
+        )
+        expected = Branch(
+            operator="<",
+            left=Reference(name="x"),
+            right=Reference(name="y"),
+            consequent=Immediate(value=30),
+            otherwise=Immediate(value=10),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_apply_arguments(self):
+        # f(if 1 < 2 then 10 else 20)  =>  f(10)
+        term = Apply(
+            target=Reference(name="f"),
+            arguments=(
+                Branch(
+                    operator="<",
+                    left=Immediate(value=1),
+                    right=Immediate(value=2),
+                    consequent=Immediate(value=10),
+                    otherwise=Immediate(value=20),
+                ),
+            ),
+        )
+        expected = Apply(
+            target=Reference(name="f"),
+            arguments=(Immediate(value=10),),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_apply_target(self):
+        # (if 1==1 then f else g)(x)  =>  f(x)
+        term = Apply(
+            target=Branch(
+                operator="==",
+                left=Immediate(value=1),
+                right=Immediate(value=1),
+                consequent=Reference(name="f"),
+                otherwise=Reference(name="g"),
+            ),
+            arguments=(Reference(name="x"),),
+        )
+        expected = Apply(
+            target=Reference(name="f"),
+            arguments=(Reference(name="x"),),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_primitive_operands(self):
+        # (if 1 < 2 then 3 else 4) + (if 5 == 5 then 6 else 7)  =>  3 + 6
+        term = Primitive(
+            operator="+",
+            left=Branch(
+                operator="<",
+                left=Immediate(value=1),
+                right=Immediate(value=2),
+                consequent=Immediate(value=3),
+                otherwise=Immediate(value=4),
+            ),
+            right=Branch(
+                operator="==",
+                left=Immediate(value=5),
+                right=Immediate(value=5),
+                consequent=Immediate(value=6),
+                otherwise=Immediate(value=7),
+            ),
+        )
+        expected = Primitive(
+            operator="+",
+            left=Immediate(value=3),
+            right=Immediate(value=6),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_store_value(self):
+        # store(arr, 0, if 2==2 then 99 else 0)  =>  store(arr, 0, 99)
+        term = Store(
+            base=Reference(name="arr"),
+            index=0,
+            value=Branch(
+                operator="==",
+                left=Immediate(value=2),
+                right=Immediate(value=2),
+                consequent=Immediate(value=99),
+                otherwise=Immediate(value=0),
+            ),
+        )
+        expected = Store(
+            base=Reference(name="arr"),
+            index=0,
+            value=Immediate(value=99),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_store_base(self):
+        # store(if 1<2 then arr else arr2, 0, x)  =>  store(arr, 0, x)
+        term = Store(
+            base=Branch(
+                operator="<",
+                left=Immediate(value=1),
+                right=Immediate(value=2),
+                consequent=Reference(name="arr"),
+                otherwise=Reference(name="arr2"),
+            ),
+            index=0,
+            value=Reference(name="x"),
+        )
+        expected = Store(
+            base=Reference(name="arr"),
+            index=0,
+            value=Reference(name="x"),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_begin_effect(self):
+        # begin [store(arr, 0, if 1<2 then 10 else 20)]; 0  =>  begin [store(arr, 0, 10)]; 0
+        term = Begin(
+            effects=(
+                Store(
+                    base=Reference(name="arr"),
+                    index=0,
+                    value=Branch(
+                        operator="<",
+                        left=Immediate(value=1),
+                        right=Immediate(value=2),
+                        consequent=Immediate(value=10),
+                        otherwise=Immediate(value=20),
+                    ),
+                ),
+            ),
+            value=Immediate(value=0),
+        )
+        expected = Begin(
+            effects=(Store(base=Reference(name="arr"), index=0, value=Immediate(value=10)),),
+            value=Immediate(value=0),
+        )
+        assert branch_elimination_term(term) == expected
+
+    def test_recurses_into_begin_value(self):
+        # begin [store(arr,0,1)]; if 3==3 then x else y  =>  begin [store(arr,0,1)]; x
+        term = Begin(
+            effects=(Store(base=Reference(name="arr"), index=0, value=Immediate(value=1)),),
+            value=Branch(
+                operator="==",
+                left=Immediate(value=3),
+                right=Immediate(value=3),
+                consequent=Reference(name="x"),
+                otherwise=Reference(name="y"),
+            ),
+        )
+        expected = Begin(
+            effects=(Store(base=Reference(name="arr"), index=0, value=Immediate(value=1)),),
+            value=Reference(name="x"),
+        )
+        assert branch_elimination_term(term) == expected
 
 
 # ===========================================================================
