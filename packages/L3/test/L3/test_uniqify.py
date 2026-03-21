@@ -1,4 +1,17 @@
-from L3.syntax import Abstract, Allocate, Apply, Begin, Immediate, Let, LetRec, Load, Reference, Store
+from L3.syntax import (
+    Abstract,
+    Allocate,
+    Apply,
+    Begin,
+    Branch,
+    Immediate,
+    Let,
+    LetRec,
+    Load,
+    Primitive,
+    Reference,
+    Store,
+)
 from L3.uniqify import Context, uniqify_term
 from util.sequential_name_generator import SequentialNameGenerator
 
@@ -172,6 +185,52 @@ def test_uniqify_begin():
             ),
         ],
         value=Reference(name="x0"),  # renamed via context
+    )
+
+    assert actual == expected
+
+
+def test_uniqify_primitive():
+    term = Primitive(
+        operator="+",
+        left=Reference(name="x"),
+        right=Reference(name="y"),
+    )
+
+    context: Context = {"x": "x0", "y": "y0"}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+
+    expected = Primitive(
+        operator="+",  # unchanged
+        left=Reference(name="x0"),  # renamed via context
+        right=Reference(name="y0"),  # renamed via context
+    )
+
+    assert actual == expected
+
+
+def test_uniqify_branch():
+    term = Branch(
+        operator="<",
+        left=Reference(name="x"),
+        right=Reference(name="y"),
+        consequent=Reference(name="x"),
+        otherwise=Reference(name="y"),
+    )
+
+    context: Context = {"x": "x0", "y": "y0"}
+    fresh = SequentialNameGenerator()
+
+    actual = uniqify_term(term, context, fresh)
+
+    expected = Branch(
+        operator="<",  # unchanged
+        left=Reference(name="x0"),  # renamed via context
+        right=Reference(name="y0"),  # renamed via context
+        consequent=Reference(name="x0"),  # renamed via context
+        otherwise=Reference(name="y0"),  # renamed via context
     )
 
     assert actual == expected
