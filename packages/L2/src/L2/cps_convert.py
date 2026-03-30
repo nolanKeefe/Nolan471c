@@ -22,7 +22,7 @@ We "trust" it wont be bad
 
 def cps_convert_term(
     term: L2.Term,
-    k: Callable[[L1.Identifier], L1.Statement],  # identifier -> statement the rest of the computation
+    m: Callable[[L1.Identifier], L1.Statement],  # identifier -> statement the rest of the computation
     fresh: Callable[[str], str],
 ) -> L1.Statement:  # this whole thing is producing the statement
     _term = partial(cps_convert_term, fresh=fresh)
@@ -30,17 +30,56 @@ def cps_convert_term(
 
     match term:
         case L2.Let(bindings=bindings, body=body):
-            pass
+            result = _term(body, m)  # starts as a cps conversion of the body
+
+            for name, value in reversed(bindings):  # reversed for test case / effeciency
+                # each term has a value but need the continuation of what comes next
+                # rest of the body thinks its called name? need to reconcile
+                result = _term(
+                    value,
+                    lambda value: L1.Copy(  # use copy for this reconcling
+                        destination=name,
+                        source=value,
+                        then=result,
+                    ),
+                )
+
+            return result
 
         case L2.Reference(name=name):  # name is an identifier, takes in name returns that name k-ified
-            return k(name)
+            return m(name)
 
         # abstracts and applys are gonna be calls to k as per notes in class
         case L2.Abstract(parameters=parameters, body=body):
-            pass
+            tmp = fresh("t")
+            k = fresh("k")
+
+            return L1.Abstract(
+                destination=tmp,
+                parameters=[*parameters, k],
+                body=_term(body, lambda body: L1.Apply(target=k, arguments=[body])),
+                then=m(tmp),
+            )
 
         case L2.Apply(target=target, arguments=arguments):
-            pass
+            tmp = fresh("t")
+            k = fresh("k")
+            return L1.Abstract(  # package it all in an abstract to make it expanded and explicit
+                destination=k,
+                parameters=[tmp],
+                body=m(tmp),
+                then=_term(
+                    target,
+                    lambda target: _terms(
+                        arguments,
+                        lambda arguments: L1.Apply(
+                            target=target,
+                            arguments=[*arguments, k],
+                        ),
+                    ),
+                ),
+            )
+
             # return L1.Apply(target = target, arguments=arguments) need to convert values
 
         case L2.Immediate(value=value):  # k needs a this, we need a uniquified name for it
@@ -49,7 +88,7 @@ def cps_convert_term(
             return L1.Immediate(
                 destination=tmp,  # needs a fresh identifier using t to match with the given tests can chang it in tests if wanted
                 value=value,
-                then=k(tmp),  # what happens next. need to materialize it an actual L1 statement
+                then=m(tmp),  # what happens next. need to materialize it an actual L1 statement
             )
 
         case L2.Primitive(operator=operator, left=left, right=right):
@@ -61,14 +100,14 @@ def cps_convert_term(
             tmp = fresh("t")  # the result of calling left and right
             return _term(
                 left,
-                k=lambda left: _term(  # We dig into the left side first
+                m=lambda left: _term(  # We dig into the left side first
                     right,
-                    k=lambda right: L1.Primitive(  # then we dig into the right but it has to hold the full Primitive
+                    m=lambda right: L1.Primitive(  # then we dig into the right but it has to hold the full Primitive
                         destination=tmp,
                         operator=operator,
                         left=left,
                         right=right,
-                        then=k(tmp),
+                        then=m(tmp),
                     ),
                 ),
             )
@@ -76,6 +115,21 @@ def cps_convert_term(
             pass
 
         case L2.Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
+            # Need to figure if we evaluate the consequent or the otherwise in our k
+            # Branching and then Merging
+            return _term(
+                left,
+                lambda left: _term(
+                    right,
+                    lambda right: L1.Branch(
+                        operator=operator,
+                        left=left,
+                        right=right,
+                        then=_term(consequent, lambda consequent: L1.Apply()),  # sorta
+                        otherwise=_term(otherwise, m),
+                    ),
+                ),
+            )
             pass
 
         case L2.Allocate(count=count):
@@ -83,18 +137,18 @@ def cps_convert_term(
             return L1.Allocate(
                 destination=tmp,  # needs a fresh identifier using t to match with the given tests can chang it in tests if wanted
                 count=count,
-                then=k(tmp),  # what happens next. need to materialize it an actual L1 statement
+                then=m(tmp),  # what happens next. need to materialize it an actual L1 statement
             )
 
         case L2.Load(base=base, index=index):
             tmp = fresh("t")
             return _term(
                 base,
-                k=lambda base: L1.Load(
+                m=lambda base: L1.Load(
                     destination=tmp,
                     base=base,
                     index=index,
-                    then=k(tmp),
+                    then=m(tmp),
                 ),
             )
 
@@ -103,9 +157,9 @@ def cps_convert_term(
             tmp = fresh("t")  # the result of calling left and right
             return _term(
                 base,
-                k=lambda base: _term(  # We dig into the base
+                m=lambda base: _term(  # We dig into the base
                     value,
-                    k=lambda value: L1.Store(  # we then can return a store
+                    m=lambda value: L1.Store(  # we then can return a store
                         base=base,
                         index=index,
                         value=value,
@@ -113,7 +167,7 @@ def cps_convert_term(
                             # We make an immediate, also because the store lacks the explicit zero in the first place
                             destination=tmp,
                             value=0,
-                            then=k(tmp),
+                            then=m(tmp),
                         ),
                     ),
                 ),
@@ -125,7 +179,7 @@ def cps_convert_term(
                 effects,
                 lambda effects: _term(  # dig into the effects
                     value,
-                    lambda value: k(  # dig into the value
+                    lambda value: m(  # dig into the value
                         value
                     ),  # we can just call k on value because we already have a name for everything! in value!!
                 ),
