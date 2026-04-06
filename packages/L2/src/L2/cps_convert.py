@@ -112,25 +112,34 @@ def cps_convert_term(
                 ),
             )
 
-            pass
-
         case L2.Branch(operator=operator, left=left, right=right, consequent=consequent, otherwise=otherwise):
             # Need to figure if we evaluate the consequent or the otherwise in our k
             # Branching and then Merging
-            return _term(
-                left,
-                lambda left: _term(
-                    right,
-                    lambda right: L1.Branch(
-                        operator=operator,
-                        left=left,
-                        right=right,
-                        then=_term(consequent, lambda consequent: L1.Apply()),  # sorta
-                        otherwise=_term(otherwise, m),
+            j = fresh("j")  # the join point function name to merge the branches context
+            tmp = fresh("t")  # what j receives as its argument
+            return L1.Abstract(  # the join point function that merges the branches context
+                destination=j,
+                parameters=[tmp],
+                body=m(
+                    tmp
+                ),  # the body of the join point is just the rest of the program, we can call m on tmp because it is the value that we are branching on
+                then=_term(
+                    left,
+                    lambda left: _term(
+                        right,
+                        lambda right: L1.Branch(  # the actual term we are returning
+                            operator=operator,
+                            left=left,
+                            right=right,  # we've linked the left and right now we need to link the consequent and otherwise in some sense
+                            # We use Apply to link the continuations of the branches to the rest of the program, we need to make them into continuations first though
+                            then=_term(
+                                consequent, lambda consequent: L1.Apply(target=j, arguments=[consequent])
+                            ),  # sorta
+                            otherwise=_term(otherwise, lambda otherwise: L1.Apply(target=j, arguments=[otherwise])),
+                        ),
                     ),
                 ),
             )
-            pass
 
         case L2.Allocate(count=count):
             tmp = fresh("t")  # need to store here for consistency
