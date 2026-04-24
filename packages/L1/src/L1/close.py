@@ -1,3 +1,4 @@
+# used Claude to help produce tests, i confirmed functionality
 from collections.abc import Callable
 from functools import partial
 
@@ -46,9 +47,6 @@ def free_variables(statement: L1.Statement) -> set[L1.Identifier]:
 
         case L1.Halt(value=v):
             return {v}
-
-        case _:
-            raise ValueError(f"Unhandled statement: {statement}")
 
 
 # ── close_statement ───────────────────────────────────────────────────────────
@@ -183,9 +181,6 @@ def close_statement(
 
         case L1.Halt(value=v):
             return L0.Halt(value=v)
-
-        case _:
-            raise ValueError(f"Unhandled statement: {statement}")
 
 
 # ── close_program ─────────────────────────────────────────────────────────────
